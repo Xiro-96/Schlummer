@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Schlummer">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2145"/>
+      <stop offset="1" stop-color="#080b18"/>
+    </linearGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b7dff"/>
+      <stop offset="1" stop-color="#4ad0d8"/>
+    </linearGradient>
+    <mask id="crescent">
+      <rect width="512" height="512" fill="#000"/>
+      <circle cx="271" cy="256" r="154" fill="#fff"/>
+      <circle cx="374" cy="189" r="143" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <g fill="#ffffff">
+    <circle cx="123" cy="133" r="7" opacity=".85"/>
+    <circle cx="389" cy="102" r="5" opacity=".7"/>
+    <circle cx="154" cy="379" r="5" opacity=".6"/>
+    <circle cx="358" cy="399" r="7" opacity=".75"/>
+    <circle cx="92" cy="266" r="4" opacity=".5"/>
+  </g>
+  <rect width="512" height="512" fill="url(#moon)" mask="url(#crescent)"/>
+</svg>

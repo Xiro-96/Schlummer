@@ -1,0 +1,1350 @@
+/* Schlummer - dunkles, augenschonendes Nacht-Design (Mobile first). */
+
+:root {
+  --bg: #0b1020;
+  --bg-soft: #131a30;
+  --card: rgba(255, 255, 255, 0.06);
+  --card-strong: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #eef1fb;
+  --muted: #a3abc8;
+  --accent: #8b7dff;
+  --accent-2: #4ad0d8;
+  --warn: #ffb86b;
+  --sleep: #6f6ae8;
+  --nap: #4ad0d8;
+  --night: #3b3f8f;
+  --radius: 18px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --tabbar-h: 62px;
+  /* Sorgt dafür, dass native Felder und Auswahlräder dunkel gerendert werden. */
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: radial-gradient(120% 80% at 50% 0%, #1b2145 0%, var(--bg) 55%, #070a15 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  /* Das Ziehen von oben gehört der Tagesauswahl, nicht dem Neuladen. */
+  overscroll-behavior-y: contain;
+}
+
+#app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  margin: 0 0 8px;
+}
+
+h1 {
+  font-size: 1.35rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+p {
+  margin: 0 0 10px;
+}
+
+small,
+.muted {
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------- Kopfzeile */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 0 10px;
+}
+
+.topbar .who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(140deg, var(--accent), var(--accent-2));
+  color: #0b1020;
+  font-weight: 700;
+  flex: none;
+}
+
+.topbar .name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- Karten */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.card.tight {
+  padding: 12px 14px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* --------------------------------------------------------------- Buttons */
+
+button,
+.btn {
+  font: inherit;
+  color: inherit;
+  border: 1px solid var(--line);
+  background: var(--card-strong);
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+button.primary {
+  background: linear-gradient(140deg, var(--accent), #6f6ae8);
+  border-color: transparent;
+  font-weight: 600;
+  color: #fff;
+}
+
+button.ghost {
+  background: transparent;
+}
+
+button.danger {
+  border-color: rgba(255, 120, 120, 0.5);
+  color: #ff9b9b;
+  background: transparent;
+}
+
+button.block {
+  width: 100%;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+button.chip {
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  min-height: 40px;
+}
+
+/* Daumenfreundliche Trefferflächen, auch in Listen */
+button,
+.btn {
+  min-height: 40px;
+}
+
+.list button.chip {
+  min-height: 42px;
+}
+
+button.chip[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.row.tight {
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ Ring */
+
+.status {
+  text-align: center;
+  padding-top: 4px;
+}
+
+.ring {
+  position: relative;
+  width: 236px;
+  height: 236px;
+  margin: 4px auto 10px;
+}
+
+.ring svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+
+.ring .track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.09);
+  stroke-width: 14;
+}
+
+.ring .value {
+  fill: none;
+  stroke: url(#ringGrad);
+  stroke-width: 14;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.ring.over .value {
+  stroke: var(--warn);
+}
+
+.ring .inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 2px;
+}
+
+.ring .big {
+  font-size: 2.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring .label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* -------------------------------------------------------------- Timeline */
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline li {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.timeline li:first-child {
+  border-top: 0;
+}
+
+.timeline .time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.timeline .what {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.dot.nap {
+  background: var(--nap);
+}
+
+.dot.night {
+  background: var(--night);
+}
+
+.dot.wake {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.tag {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.tag.live {
+  color: #0b1020;
+  background: var(--accent-2);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- Sounds */
+
+.sound-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+}
+
+.sound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border-radius: 16px;
+  text-align: center;
+  line-height: 1.2;
+  font-size: 0.85rem;
+}
+
+.sound .emoji {
+  font-size: 1.6rem;
+}
+
+.sound[aria-pressed='true'] {
+  background: linear-gradient(140deg, rgba(139, 125, 255, 0.85), rgba(74, 208, 216, 0.7));
+  border-color: transparent;
+  color: #08101f;
+  font-weight: 600;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* ----------------------------------------------------------- Now playing */
+
+.nowplaying {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 8px);
+  width: min(608px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(20, 26, 48, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.nowplaying .meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.nowplaying .title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 20px;
+}
+
+.eq span {
+  width: 3px;
+  background: var(--accent-2);
+  border-radius: 2px;
+  animation: eq 1s ease-in-out infinite;
+}
+
+.eq span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.eq span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes eq {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq span {
+    animation: none;
+    height: 12px;
+  }
+}
+
+/* ------------------------------------------------------------ Statistik */
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 150px;
+  margin: 10px 0 6px;
+}
+
+.bars .col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 100%;
+}
+
+.bars .seg {
+  border-radius: 5px 5px 0 0;
+  min-height: 2px;
+}
+
+.bars .seg.nap {
+  background: var(--nap);
+  border-radius: 5px;
+}
+
+.bars .seg.night {
+  background: var(--night);
+}
+
+.bars .lbl {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  text-align: center;
+}
+
+.kpi .v {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.kpi .k {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- Formular */
+
+label.field {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card-2, rgba(255, 255, 255, 0.04));
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+label.check input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+label.check:has(input:checked) {
+  border-color: var(--accent);
+}
+
+input[type='text'],
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+input[type='number'],
+textarea,
+select {
+  width: 100%;
+  margin-top: 5px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.list li:first-child {
+  border-top: 0;
+}
+
+.list .grow {
+  flex: 1;
+  min-width: 0;
+  /* Lange Wörter wie "Nickerchenlänge" dürfen nicht in den Wert laufen. */
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------- Tableiste */
+
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex;
+  background: rgba(10, 14, 28, 0.95);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  z-index: 30;
+}
+
+.tabbar button {
+  flex: 1;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
+.tabbar button .ico {
+  font-size: 1.15rem;
+}
+
+.tabbar button[aria-current='page'] {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- Dialog */
+
+dialog {
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: 18px;
+  padding: 18px;
+  width: min(440px, calc(100% - 32px));
+  /* Auf kleinen Displays muss der Inhalt scrollen können, nicht abschneiden. */
+  max-height: 86vh;
+  max-height: 86dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: var(--shadow);
+}
+
+dialog::backdrop {
+  background: rgba(4, 6, 14, 0.7);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + 78px);
+  background: rgba(20, 26, 48, 0.96);
+  border: 1px solid var(--line);
+  padding: 10px 16px;
+  border-radius: 999px;
+  z-index: 50;
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.hint ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.center {
+  text-align: center;
+}
+
+.spread {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.ring .inner {
+  padding: 0 46px;
+}
+
+.ring .inner .sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+/* Platz für die Wiedergabeleiste, damit sie nichts verdeckt. */
+body.has-nowplaying {
+  padding-bottom: calc(var(--tabbar-h) + 76px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Fortschrittsbalken für die Lern-Konfidenz */
+.meter {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin: 2px 0 12px;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.list.compare li {
+  gap: 8px;
+  font-size: 0.92rem;
+}
+
+/* Bewertung nach dem Schlaf - große Flächen für müde Daumen */
+.rate-sheet .card-head {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.rate-sheet .card-head h2 {
+  margin-bottom: 2px;
+}
+
+.rate-group {
+  border: 0;
+  padding: 0;
+  margin: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rate-group legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.rate-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  text-align: left;
+  min-height: 58px;
+}
+
+.rate-option .emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.rate-option .grow {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.rate-option[aria-pressed='true'] {
+  background: linear-gradient(140deg, rgba(139, 125, 255, 0.9), rgba(74, 208, 216, 0.75));
+  border-color: transparent;
+  color: #08101f;
+}
+
+.rate-option[aria-pressed='true'] .muted {
+  color: rgba(8, 16, 31, 0.7);
+}
+
+button:focus-visible,
+.rate-option:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.tag.warn {
+  border-color: rgba(255, 184, 107, 0.55);
+  color: var(--warn);
+}
+
+.card a {
+  color: var(--accent-2);
+}
+
+.list .emoji {
+  font-size: 1.15rem;
+  width: 22px;
+  text-align: center;
+  flex: none;
+}
+
+/* Antippbare Zeilen im Tagesplan */
+.timeline li.tappable {
+  cursor: pointer;
+  border-radius: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin: 0 -8px;
+  min-height: 48px;
+  transition: background 0.15s ease;
+}
+
+.timeline li.tappable:active,
+.timeline li.tappable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.timeline li.tappable:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.edit-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-left: auto;
+  padding-left: 6px;
+}
+
+.row.nudge {
+  margin: -4px 0 12px;
+}
+
+.row.nudge .chip {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Nächster Schlaf: die wichtigste Zahl des Tages */
+.next-sleep .next-time {
+  text-align: center;
+  padding: 6px 0 12px;
+}
+
+.next-sleep .window {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.next-sleep .formula {
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 12px;
+  margin: 0 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0 9px 26px;
+  border-top: 1px solid var(--line);
+  position: relative;
+  font-size: 0.9rem;
+}
+
+.steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--card-strong);
+  color: var(--muted);
+  font-size: 0.66rem;
+  display: grid;
+  place-items: center;
+}
+
+.steps li .grow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.steps li .val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.steps li.result {
+  border-top: 1px solid var(--accent);
+}
+
+.steps li.result::before {
+  background: var(--accent);
+  color: #fff;
+  content: '=';
+}
+
+/* 24-Stunden-Uhr */
+.clock svg {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  display: block;
+  margin: 0 auto 6px;
+}
+
+.clock .ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 16;
+}
+
+.clock .seg {
+  fill: none;
+  stroke-width: 16;
+}
+
+.clock .nowhand {
+  stroke: var(--warn);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.clock .tick {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.clock .clock-main {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.clock .clock-sub {
+  fill: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-anchor: middle;
+}
+
+.clock .clock-next {
+  fill: var(--accent-2);
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.clock-legend {
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast .chip {
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+}
+
+/* Nächtliches Aufwachen im Bearbeiten-Dialog */
+.gap-row {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 12px 8px;
+  margin-bottom: 10px;
+}
+
+.gap-row .field {
+  margin-bottom: 8px;
+}
+
+.chip.danger {
+  border-color: rgba(255, 120, 120, 0.5);
+  color: #ff9b9b;
+}
+
+/* ------------------------------------------------------- Tagesbogen */
+
+.dayarc {
+  position: relative;
+  max-width: 340px;
+  margin: 4px auto 8px;
+}
+
+.dayarc svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.arc-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.arc-done {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.arc-nap {
+  fill: none;
+  stroke: var(--nap);
+  stroke-width: 16;
+  stroke-linecap: round;
+}
+
+.arc-nap.planned {
+  stroke: var(--nap);
+  opacity: 0.42;
+}
+
+.arc-now {
+  fill: var(--warn);
+  stroke: var(--bg);
+  stroke-width: 3;
+}
+
+.marker circle {
+  fill: var(--bg-soft);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.marker text {
+  font-size: 17px;
+  text-anchor: middle;
+}
+
+.marker.wake circle {
+  stroke: var(--warn);
+}
+
+.marker.bed circle {
+  stroke: #f0a868;
+}
+
+.marker.nap.actual circle {
+  stroke: var(--nap);
+}
+
+.marker.nap.planned circle {
+  stroke: rgba(74, 208, 216, 0.45);
+  stroke-dasharray: 3 3;
+}
+
+.arc-label {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--muted);
+}
+
+.arc-label.wake {
+  fill: var(--warn);
+}
+
+.arc-label.bed {
+  fill: #f0a868;
+}
+
+.arc-label.nap {
+  fill: var(--accent-2);
+}
+
+.arc-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 0 62px;
+  pointer-events: none;
+}
+
+.arc-center .head {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.arc-center .big {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.arc-center.over .big {
+  color: var(--warn);
+}
+
+.arc-center .sub {
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.next-sleep .formula {
+  margin-bottom: 10px;
+}
+
+/* ------------------------------------------------------- Tagesauswahl */
+
+.daystrip {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.daystrip .strip-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 1rem;
+}
+
+.daystrip .strip-head small {
+  display: block;
+  font-size: 0.8rem;
+}
+
+.daystrip .strip-head .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.daystrip .chev {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.strip-body {
+  padding: 0 10px 12px;
+}
+
+.strip-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.strip-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.strip-days .day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0 6px;
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.strip-days .day small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.strip-days .day .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.strip-days .day .dot.on {
+  background: var(--nap);
+}
+
+.strip-days .day.today {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.strip-days .day.sel {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #12132a;
+  font-weight: 700;
+}
+
+.strip-days .day.sel small {
+  color: rgba(18, 19, 42, 0.7);
+}
+
+.strip-days .day[disabled] {
+  opacity: 0.3;
+}
+
+.chip.block {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Symbole im Bogen sind Knöpfe */
+
+.marker.tap {
+  cursor: pointer;
+}
+
+/* Der Standard-Fokusrahmen legt sich als Kasten um das Symbol. */
+.marker.tap:focus {
+  outline: none;
+}
+
+/* Die unsichtbare Trefferfläche darf nichts erben - sonst ist sie sichtbar. */
+.marker circle.hit {
+  fill: transparent;
+  stroke: none;
+  stroke-width: 0;
+}
+
+.marker.tap:active circle:not(.hit),
+.marker.tap:focus-visible circle:not(.hit) {
+  /* kurzes Aufleuchten beim Antippen */
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
+.arc-nap.tap {
+  cursor: pointer;
+}
+
+.arc-hint {
+  margin: -6px 0 12px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------- Verlauf */
+
+.trend {
+  margin: 0 0 10px;
+}
+
+.trend figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.trend .tr-spanne {
+  font-variant-numeric: tabular-nums;
+}
+
+.trend .tr-spanne strong {
+  color: var(--text);
+}
+
+.trend svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.tr-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.tr-achse,
+.tr-tag {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tr-achse {
+  text-anchor: end;
+}
+
+.tr-linie {
+  fill: none;
+  stroke: var(--nap);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.tr-punkt {
+  fill: var(--nap);
+  stroke: var(--bg-soft);
+  stroke-width: 2;
+}
