@@ -666,3 +666,41 @@ export function napTrend(sleeps, { days = 14, now = new Date() } = {}) {
     })
     .sort((a, b) => a.tag - b.tag);
 }
+
+/**
+ * Wie viel Schlaf braucht dieses Kind in 24 Stunden? Gelernt aus den eigenen
+ * vollständigen Tagen: Nickerchen des Tages plus die Nacht, die an seinem
+ * Abend beginnt, abzüglich erfasster Wachphasen.
+ *
+ * Der Wert ist erstaunlich stabil - und er ist der Grund, warum Tag- und
+ * Nachtschlaf gegeneinander laufen: Was mittags geschlafen wird, fehlt nachts.
+ *
+ * @returns {null|{minutes:number, tage:number, min:number, max:number}}
+ */
+export function sleepNeed24h(sleeps, now = new Date(), { days = 21 } = {}) {
+  const from = new Date(now.getTime() - days * DAY);
+  const naps = sleeps.filter((s) => s.type === 'nap' && s.end && s.start >= from);
+  const nights = sleeps.filter((s) => s.type === 'night' && s.end && s.start >= from);
+  const summen = [];
+  for (const nacht of nights) {
+    const key = dayKey(nacht.start);
+    const tagschlaf = naps
+      .filter((n) => dayKey(n.start) === key)
+      .reduce((sum, n) => sum + minutesBetween(n.start, n.end), 0);
+    const wach = (nacht.interruptions || []).reduce(
+      (sum, g) => sum + (g.end ? minutesBetween(g.start, g.end) : 0),
+      0
+    );
+    const gesamt = minutesBetween(nacht.start, nacht.end) - wach + tagschlaf;
+    // Offensichtliche Ausreißer (Krankheit, Autofahrt, Fehleintrag) draußen lassen.
+    if (gesamt >= 8 * 60 && gesamt <= 16 * 60) summen.push(gesamt);
+  }
+  if (summen.length < 4) return null;
+  const sortiert = [...summen].sort((a, b) => a - b);
+  return {
+    minutes: Math.round(sortiert[Math.floor(sortiert.length / 2)]),
+    tage: sortiert.length,
+    min: sortiert[0],
+    max: sortiert[sortiert.length - 1]
+  };
+}

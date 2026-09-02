@@ -8,7 +8,7 @@
  * Reine Funktionen, keine Speicher- oder DOM-Zugriffe.
  */
 import { NIGHT_NORMS } from './data.js';
-import { DAY } from './schedule.js';
+import { DAY, minutesBetween } from './schedule.js';
 
 const DAYS_PER_MONTH = 30.44;
 
@@ -135,4 +135,71 @@ export function nightWakingReport(sleeps, { nights = 14, now = new Date() } = {}
     anteil: naechte.length ? mitWachphasen / naechte.length : 0,
     haeufigsteStunde
   };
+}
+
+/**
+ * Was unterscheidet ruhige von unruhigen Nächten? Vergleicht für jede Nacht
+ * den Überhang (Zeit im Bett minus verbleibender Schlafbedarf) mit der
+ * tatsächlich wach verbrachten Zeit.
+ *
+ * Das ist eine Beobachtung an den eigenen Daten, kein Beweis: Es kann immer
+ * etwas anderes dahinterstecken (Zähne, Infekt, Entwicklungsschub).
+ *
+ * @param {object[]} sleeps  Einträge mit Date-Objekten
+ * @param {number}   need24h gelernter Tagesbedarf in Minuten
+ * @returns {null|{naechte:Array, ruhig:object, unruhig:object, zusammenhang:number}}
+ */
+export function nightPatterns(sleeps, need24h, { nights = 21, now = new Date() } = {}) {
+  if (!need24h) return null;
+  const from = new Date(now.getTime() - nights * DAY);
+  const key = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const naps = sleeps.filter((s) => s.type === 'nap' && s.end && s.start >= from);
+  const liste = [];
+  for (const nacht of sleeps) {
+    if (nacht.type !== 'night' || !nacht.end || nacht.start < from) continue;
+    const tagschlaf = naps
+      .filter((n) => key(n.start) === key(nacht.start))
+      .reduce((sum, n) => sum + minutesBetween(n.start, n.end), 0);
+    const wach = (nacht.interruptions || []).reduce(
+      (sum, g) => sum + (g.end ? minutesBetween(g.start, g.end) : 0),
+      0
+    );
+    const imBett = minutesBetween(nacht.start, nacht.end);
+    liste.push({
+      tag: new Date(nacht.start),
+      tagschlaf: Math.round(tagschlaf),
+      bettzeit: nacht.start,
+      imBett: Math.round(imBett),
+      wach: Math.round(wach),
+      ueberhang: Math.round(imBett - (need24h - tagschlaf))
+    });
+  }
+  if (liste.length < 5) return null;
+  const ruhig = liste.filter((n) => n.wach === 0);
+  const unruhig = liste.filter((n) => n.wach > 0);
+  if (!ruhig.length || !unruhig.length) return null;
+
+  const median = (werte) => {
+    const s = [...werte].sort((a, b) => a - b);
+    return Math.round(s[Math.floor(s.length / 2)]);
+  };
+  const fasse = (gruppe) => ({
+    naechte: gruppe.length,
+    tagschlaf: median(gruppe.map((n) => n.tagschlaf)),
+    ueberhang: median(gruppe.map((n) => n.ueberhang)),
+    bettzeit: median(gruppe.map((n) => n.bettzeit.getHours() * 60 + n.bettzeit.getMinutes()))
+  });
+
+  // Pearson zwischen Überhang und Wachzeit - grobe Richtungsangabe.
+  const n = liste.length;
+  const mx = liste.reduce((s, x) => s + x.ueberhang, 0) / n;
+  const my = liste.reduce((s, x) => s + x.wach, 0) / n;
+  const sx = Math.sqrt(liste.reduce((s, x) => s + (x.ueberhang - mx) ** 2, 0) / n);
+  const sy = Math.sqrt(liste.reduce((s, x) => s + (x.wach - my) ** 2, 0) / n);
+  const zusammenhang =
+    sx > 0 && sy > 0
+      ? liste.reduce((s, x) => s + (x.ueberhang - mx) * (x.wach - my), 0) / (n * sx * sy)
+      : 0;
+
+  return { naechte: liste, ruhig: fasse(ruhig), unruhig: fasse(unruhig), zusammenhang };
 }

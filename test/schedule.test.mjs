@@ -9,12 +9,15 @@ import {
   buildDayReview,
   findConflicts,
   findMissingNights,
+  napCap,
+  nightBalance,
   nightShiftFor,
   daysSince,
   bandForAge,
   buildPlan,
   fmtCountdown,
   fmtDuration,
+  fmtTime,
   formatAge,
   minutesBetween,
   nightEndFor,
@@ -737,4 +740,47 @@ test('Der laufende Abend wird nicht als Luecke gemeldet', () => {
   ];
   // Es ist der 16. am Abend - die heutige Nacht kann noch kommen.
   assert.deepEqual(findMissingNights(sleeps, at(20, 0, 16)), []);
+});
+
+test('Die Nachtbilanz zieht den Tagschlaf vom Tagesbedarf ab', () => {
+  // Lias 31.08.: 2 Std 6 Min Tagschlaf, Bett 19:20, Aufstehen 07:35
+  const b = nightBalance({
+    need24h: 767,
+    dayMinutes: 126,
+    bedtime: at(19, 20),
+    morningWake: at(7, 35)
+  });
+  assert.equal(b.nightNeed, 641, 'Bedarf minus Tagschlaf');
+  assert.equal(b.inBed, 735, 'von 19:20 bis 07:35');
+  assert.equal(b.surplus, 94, 'gut anderthalb Stunden mehr Bett als Bedarf');
+  assert.equal(fmtTime(b.wakeAt), '06:01', 'rechnerisches Nachtende');
+});
+
+test('Ohne Überhang meldet die Bilanz keinen', () => {
+  const b = nightBalance({
+    need24h: 767,
+    dayMinutes: 80,
+    bedtime: at(19, 3),
+    morningWake: at(6, 30)
+  });
+  assert.ok(Math.abs(b.surplus) <= 5, `kein nennenswerter Überhang: ${b.surplus}`);
+});
+
+test('Der Nickerchen-Deckel schützt die Nachtzeit', () => {
+  // Übliche Nacht 11:10, Bedarf 12:47 -> für den Tag bleiben 1:37
+  const c = napCap({ need24h: 767, nightMinutes: 670, sleptToday: 0, napStart: at(11, 15) });
+  assert.equal(c.maxDay, 97);
+  assert.equal(fmtTime(c.at), '12:52');
+  assert.equal(c.nightNeed, 670);
+
+  // Hat das Kind schon geschlafen, bleibt weniger übrig - unter 45 Minuten
+  // wird gar nicht erst geweckt.
+  assert.equal(napCap({ need24h: 767, nightMinutes: 670, sleptToday: 60, napStart: at(14, 0) }), null);
+});
+
+test('Ohne gelernten Bedarf gibt es keine Weckempfehlung', () => {
+  assert.equal(
+    napCap({ need24h: null, nightMinutes: 670, napStart: at(11, 0) }),
+    null
+  );
 });

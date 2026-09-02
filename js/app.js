@@ -11,6 +11,8 @@ import {
   buildDayReview,
   findConflicts,
   findMissingNights,
+  napCap,
+  nightBalance,
   fmtCountdown,
   daysSince,
   fmtCompact,
@@ -27,6 +29,7 @@ import {
   bandForNapCount,
   expectedNapCount,
   learnProfile,
+  sleepNeed24h,
   napTransitionReport,
   napTrend,
   napTransitionHint,
@@ -38,6 +41,7 @@ import {
   averageWakings,
   clinicHintsFor,
   compareWakings,
+  nightPatterns,
   nightWakingReport,
   wakingCount
 } from './norms.js';
@@ -176,6 +180,8 @@ function context(now = new Date()) {
     .pop();
   const nightMinutes = lastNight ? store.netSleepMinutes(lastNight, now) : 0;
   const pressure = sleepPressure(band, napsDone, sleptSoFar, nightMinutes);
+  // Der eigene 24-Stunden-Bedarf: Tag- und Nachtschlaf laufen gegeneinander.
+  const need = store.getState().settings.learning ? sleepNeed24h(store.allSleeps(), now) : null;
   const plan = buildPlan({
     band,
     morningWake,
@@ -220,9 +226,19 @@ function context(now = new Date()) {
     if (varianten.length >= 2) {
       const von = new Date(Math.min(...varianten));
       const bis = new Date(Math.max(...varianten));
-      const breite = minutesBetween(von, bis);
+      // Die empfohlene Zeit muss im Fenster liegen - sonst widersprechen sich
+      // zwei Angaben, die direkt nebeneinander stehen.
+      const vonK = nextSleep.start < von ? nextSleep.start : von;
+      const bisK = nextSleep.start > bis ? nextSleep.start : bis;
+      const breite = minutesBetween(vonK, bisK);
       if (breite >= 25 && breite <= 3 * 60) {
-        napWindow = { von, bis, gemischt: true, streuung: Math.round(breite / 2), formen: true };
+        napWindow = {
+          von: vonK,
+          bis: bisK,
+          gemischt: true,
+          streuung: Math.round(breite / 2),
+          formen: true
+        };
       }
     }
   }
@@ -238,6 +254,8 @@ function context(now = new Date()) {
       if (von < frueh) von = frueh;
       if (bis > spaet) bis = spaet;
     }
+    if (nextSleep.start < von) von = nextSleep.start;
+    if (nextSleep.start > bis) bis = nextSleep.start;
     if (minutesBetween(von, bis) >= 20) {
       napWindow = { von, bis, gemischt, streuung: Math.round(streuung) };
     }
@@ -257,7 +275,42 @@ function context(now = new Date()) {
     }
   }
 
+  // Wie viel Nachtschlaf bleibt nach dem heutigen Tagschlaf - und wie lange
+  // darf das laufende Nickerchen noch dauern, ohne der Nacht Zeit zu nehmen?
+  const gewohntesAufstehen =
+    profile.active && profile.values.morning != null
+      ? timeOnDay(morningWake, toClock(profile.values.morning))
+      : morningWake;
+  const bilanz =
+    need && plan.bedtime
+      ? nightBalance({
+          need24h: need.minutes,
+          dayMinutes: sleptSoFar + (running && running.type !== 'night' ? minutesBetween(running.start, now) : 0),
+          bedtime: plan.bedtime,
+          morningWake: gewohntesAufstehen
+        })
+      : null;
+  // Die Nacht, die diese Familie üblicherweise hat - aus der gelernten Bettzeit
+  // und Aufstehzeit, sonst aus dem Altersband.
+  const gewohnteNacht =
+    profile.active && profile.values.bedtime != null && profile.values.morning != null
+      ? (profile.values.morning - profile.values.bedtime + 24 * 60) % (24 * 60)
+      : band.nightSleepMin;
+  const deckel =
+    need && running && running.type !== 'night'
+      ? napCap({
+          need24h: need.minutes,
+          nightMinutes: gewohnteNacht,
+          sleptToday: sleptSoFar,
+          napStart: running.start
+        })
+      : null;
+
   return {
+    need,
+    bilanz,
+    gewohntesAufstehen,
+    deckel,
     formZeiten,
     napWindow,
     now,
@@ -715,6 +768,19 @@ function sleepDetailCard(ctx) {
             </div>`
           : ''
       }
+      ${
+        // Was mittags geschlafen wird, fehlt nachts - deshalb hier der Deckel.
+        ctx.deckel && !isNight
+          ? `<p class="hint budget">
+              <strong>Wecken empfohlen um ${fmtTime(ctx.deckel.at)}.</strong>
+              ${esc(store.getState().child.name || 'Dein Kind')} braucht rund
+              ${fmtDuration(ctx.need.minutes)} Schlaf pro Tag. Bei
+              ${fmtDuration(ctx.deckel.maxDay)} Tagschlaf bleiben der Nacht
+              ${fmtDuration(ctx.deckel.nightNeed)} - länger im Bett heißt meist
+              nachts wach.
+            </p>`
+          : ''
+      }
       <p class="hint">
         ${
           isNight
@@ -795,6 +861,24 @@ function sleepDetailCard(ctx) {
                    <strong>${fmtDuration(ctx.napWindow.streuung)}</strong>. Deshalb steht oben das
                    Fenster <strong>${fmtTime(ctx.napWindow.von)}&ndash;${fmtTime(ctx.napWindow.bis)}</strong>
                    statt einer Minute. Die Rechnung unten zeigt die Mitte.`
+            }
+          </p>`
+        : ''
+    }
+    ${
+      ctx.bilanz && next.type === 'night'
+        ? `<p class="hint budget" style="margin-top:0">
+            Heute <strong>${fmtDuration(ctx.bilanz.dayMinutes)}</strong>
+            Tagschlaf &rarr; die Nacht braucht noch
+            <strong>${fmtDuration(ctx.bilanz.nightNeed)}</strong>.
+            Ab ${fmtTime(next.start)} im Bett heißt rechnerisch wach um
+            <strong>${fmtTime(ctx.bilanz.wakeAt)}</strong>.
+            ${
+              ctx.bilanz.surplus > 30
+                ? `Bis ${fmtTime(ctx.gewohntesAufstehen)} wären das ${fmtDuration(
+                    ctx.bilanz.surplus
+                  )} mehr Bettzeit als Schlafbedarf - diese Zeit wird erfahrungsgemäß nachts wach verbracht.`
+                : ''
             }
           </p>`
         : ''
@@ -1828,6 +1912,65 @@ function nachtKarte() {
     </div>`;
 }
 
+/**
+ * Was ruhige von unruhigen Nächten unterscheidet - an den eigenen Daten
+ * abgelesen. Bewusst als Beobachtung formuliert: bei so wenigen Nächten kann
+ * immer etwas anderes dahinterstecken.
+ */
+function bilanzKarte(ctx) {
+  const need = ctx.need;
+  if (!need) return '';
+  const muster = nightPatterns(store.allSleeps(), need.minutes, { now: ctx.now });
+  const hm = (m) => `${m < 0 ? '-' : ''}${Math.floor(Math.abs(m) / 60)}:${String(Math.abs(m) % 60).padStart(2, '0')}`;
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Schlafbedarf und Nacht</h2>
+        <small class="muted">aus ${need.tage} Tagen</small>
+      </div>
+      <p class="hint">
+        ${esc(store.getState().child.name || 'Dein Kind')} schläft in 24 Stunden
+        ziemlich konstant <strong>${fmtDuration(need.minutes)}</strong>
+        (Spanne ${fmtDuration(need.min)}&ndash;${fmtDuration(need.max)}).
+        Deshalb laufen Tag und Nacht gegeneinander: Jede Minute mittags fehlt der Nacht.
+      </p>
+      ${
+        muster
+          ? `<ul class="list compare">
+              <li><span class="grow"><strong>Ruhige Nächte</strong>
+                  <small class="muted">${muster.ruhig.naechte} ohne Wachphase</small></span>
+                <small class="muted">Tagschlaf</small> <strong>${hm(muster.ruhig.tagschlaf)}</strong></li>
+              <li><span class="grow"><strong>Unruhige Nächte</strong>
+                  <small class="muted">${muster.unruhig.naechte} mit Wachphase</small></span>
+                <small class="muted">Tagschlaf</small> <strong>${hm(muster.unruhig.tagschlaf)}</strong></li>
+              <li><span class="grow">Überhang im Bett
+                  <small class="muted">Bettzeit minus verbleibender Bedarf</small></span>
+                <small class="muted">${hm(muster.ruhig.ueberhang)} &rarr;</small>
+                <strong>${hm(muster.unruhig.ueberhang)}</strong></li>
+              <li><span class="grow">Bettzeit</span>
+                <small class="muted">${hm(muster.ruhig.bettzeit)} &rarr;</small>
+                <strong>${hm(muster.unruhig.bettzeit)}</strong></li>
+            </ul>
+            <p class="hint">
+              ${
+                muster.zusammenhang >= 0.4
+                  ? `Je mehr Zeit im Bett über den Bedarf hinaus, desto mehr Wachzeit in der Nacht
+                     &ndash; der Zusammenhang ist in deinen Daten deutlich sichtbar.`
+                  : muster.zusammenhang >= 0.2
+                    ? `Es zeichnet sich ab, dass zusätzliche Bettzeit über den Bedarf hinaus
+                       mit unruhigeren Nächten zusammenfällt.`
+                    : `Ein klarer Zusammenhang zwischen Bettzeit und Wachphasen ist bisher nicht
+                       zu sehen.`
+              }
+              Das ist eine Beobachtung an ${muster.naechte.length} Nächten, kein Beweis: Zähne,
+              Infekte und Entwicklungsschübe schlagen genauso durch.
+            </p>`
+          : `<p class="hint">Für den Vergleich ruhiger und unruhiger Nächte fehlen noch Nächte
+              mit erfassten Wachphasen.</p>`
+      }
+    </div>`;
+}
+
 function viewStatistik() {
   const stats = store.dailyStats(7);
   const max = Math.max(16 * 60, ...stats.map((s) => s.total));
@@ -1881,6 +2024,8 @@ function viewStatistik() {
         <span><span class="dot night"></span> Nacht</span>
       </div>
     </div>
+
+    ${bilanzKarte(context())}
 
     ${trendKarte()}
 
@@ -2261,7 +2406,7 @@ function viewMehr() {
         statt Decke, fester Untergrund, eigenes Babybett im Elternschlafzimmer, keine
         Kissen, Decken oder Nestchen, rauchfrei, Zimmertemperatur nicht über 18 °C.
       </p>
-      <p class="hint">Version 3.2 &middot; Offline nutzbar &middot; Quelloffen</p>
+      <p class="hint">Version 3.3 &middot; Offline nutzbar &middot; Quelloffen</p>
     </div>`;
 }
 

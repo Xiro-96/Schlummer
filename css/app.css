@@ -1348,3 +1348,8 @@ button:focus-visible,
   stroke: var(--bg-soft);
   stroke-width: 2;
 }
+
+.hint.budget {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}

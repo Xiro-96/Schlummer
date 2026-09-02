@@ -589,3 +589,56 @@ export function findMissingNights(sleeps = [], now = new Date(), tage = 14) {
   }
   return luecken;
 }
+
+/**
+ * Die Schlafbilanz eines Tages: Was tagsüber geschlafen wird, fehlt nachts.
+ * Liegt das Kind länger im Bett, als sein Bedarf hergibt, wird der Überhang
+ * zu Wachzeit - meist in den frühen Morgenstunden.
+ *
+ * @param {object} o
+ * @param {number} o.need24h      gelernter Tagesbedarf in Minuten
+ * @param {number} o.dayMinutes   bisheriger Tagschlaf in Minuten
+ * @param {Date}   o.bedtime      geplante oder erfasste Bettzeit
+ * @param {Date}   o.morningWake  gewünschte Aufstehzeit am nächsten Morgen
+ * @returns {{nightNeed:number, inBed:number, surplus:number, wakeAt:Date}}
+ */
+export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake }) {
+  const nightNeed = Math.max(0, need24h - dayMinutes);
+  const ziel = new Date(bedtime);
+  ziel.setHours(morningWake.getHours(), morningWake.getMinutes(), 0, 0);
+  if (ziel <= bedtime) ziel.setDate(ziel.getDate() + 1);
+  const inBed = minutesBetween(bedtime, ziel);
+  return {
+    dayMinutes: Math.round(dayMinutes),
+    nightNeed: Math.round(nightNeed),
+    inBed: Math.round(inBed),
+    surplus: Math.round(inBed - nightNeed),
+    // Wann die Nacht rechnerisch zu Ende ist, wenn sie zur Bettzeit einschläft.
+    wakeAt: addMinutes(bedtime, nightNeed)
+  };
+}
+
+/**
+ * Bis wann darf das laufende Nickerchen dauern, damit die Nacht ihre Zeit
+ * behält? Ergebnis ist eine Weckempfehlung - oder null, wenn noch reichlich
+ * Luft ist oder die Daten dafür nicht reichen.
+ *
+ * Bezug ist die Nacht, die die Familie üblicherweise hat - nicht die längste
+ * mögliche. Sonst bliebe dem Tag rechnerisch nichts übrig.
+ *
+ * @param {object} o
+ * @param {number} o.need24h       gelernter Tagesbedarf
+ * @param {number} o.nightMinutes  übliche Nachtlänge dieser Familie
+ * @param {number} o.sleptToday    schon geschlafener Tagschlaf (ohne das laufende)
+ * @param {Date}   o.napStart      Beginn des laufenden Nickerchens
+ * @param {number} [o.minNap=45]   so kurz wird nie geweckt
+ * @returns {null|{at:Date, maxDay:number, nightNeed:number}}
+ */
+export function napCap({ need24h, nightMinutes, sleptToday = 0, napStart, minNap = 45 }) {
+  if (!need24h || !nightMinutes || !napStart) return null;
+  const maxDay = Math.round(need24h - nightMinutes);
+  if (maxDay <= 0) return null;
+  const rest = maxDay - sleptToday;
+  if (rest < minNap) return null;
+  return { at: addMinutes(napStart, rest), maxDay, nightNeed: Math.round(nightMinutes) };
+}
