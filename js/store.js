@@ -470,8 +470,14 @@ export function markBackup() {
 
 /* ---------------------------------------------------------- Import/Export */
 
-export function exportJSON() {
-  return JSON.stringify(load(), null, 2);
+/**
+ * Sicherung als JSON. Die App-Version wandert mit - so ist später erkennbar,
+ * welcher Stand die Datei geschrieben hat.
+ * @param {string} [appVersion]
+ */
+export function exportJSON(appVersion = null) {
+  const daten = load();
+  return JSON.stringify(appVersion ? { ...daten, appVersion } : daten, null, 2);
 }
 
 export function importJSON(text) {

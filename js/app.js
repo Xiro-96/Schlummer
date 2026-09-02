@@ -73,6 +73,9 @@ const TABS = [
   { id: 'mehr', label: 'Mehr', icon: '⚙️' }
 ];
 
+/** Version der App - steht in "Mehr" und wandert mit in den Export. */
+export const APP_VERSION = '3.4';
+
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
 let reviewDay = null;
@@ -2222,9 +2225,34 @@ function fmtShort2(date) {
   return new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(date);
 }
 
+/**
+ * Welche Version läuft hier gerade, und ist eine neuere verfügbar? Bei einer
+ * installierten Web-App hält der Offline-Speicher die alte Fassung fest, bis
+ * er ersetzt wird - deshalb der Knopf.
+ */
+function versionsKarte() {
+  const stand = cacheStand ? cacheStand.replace('schlummer-', '') : null;
+  return `
+    <div class="card tight">
+      <div class="card-head">
+        <h2>Über die App</h2>
+        <small class="muted">Version ${esc(APP_VERSION)}</small>
+      </div>
+      <p class="hint">
+        ${stand ? `Offline-Stand <strong>${esc(stand)}</strong> &middot; ` : ''}alle Daten
+        bleiben auf diesem Gerät.
+      </p>
+      <div class="row tight">
+        <button class="chip" data-action="check-update">Auf Updates prüfen</button>
+      </div>
+    </div>`;
+}
+
 function viewMehr() {
   const s = store.getState();
   return `
+    ${versionsKarte()}
+
     ${installCard()}
 
     ${pruefKarte()}
@@ -2406,7 +2434,7 @@ function viewMehr() {
         statt Decke, fester Untergrund, eigenes Babybett im Elternschlafzimmer, keine
         Kissen, Decken oder Nestchen, rauchfrei, Zimmertemperatur nicht über 18 °C.
       </p>
-      <p class="hint">Version 3.3 &middot; Offline nutzbar &middot; Quelloffen</p>
+      <p class="hint">Version ${esc(APP_VERSION)} &middot; Offline nutzbar &middot; Quelloffen</p>
     </div>`;
 }
 
@@ -3416,6 +3444,9 @@ const actions = {
       }
     });
   },
+  'check-update'() {
+    updatePruefen();
+  },
   'ask-notify'() {
     if (!('Notification' in window)) return;
     Notification.requestPermission().then((antwort) => {
@@ -3478,7 +3509,7 @@ const actions = {
     render();
   },
   export() {
-    const blob = new Blob([store.exportJSON()], { type: 'application/json' });
+    const blob = new Blob([store.exportJSON(APP_VERSION)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `schlummer-${new Date().toISOString().slice(0, 10)}.json`;
@@ -3491,7 +3522,7 @@ const actions = {
     // Zweiter Weg für Umgebungen, in denen Downloads blockiert sind
     // (eingebettete Viewer) - und praktisch zum Verschicken der Sicherung.
     try {
-      await navigator.clipboard.writeText(store.exportJSON());
+      await navigator.clipboard.writeText(store.exportJSON(APP_VERSION));
       store.markBackup();
       render();
       toast('Daten in der Zwischenablage');
@@ -3751,6 +3782,56 @@ async function ensurePersistentStorage(ask = false) {
   }
 }
 
+/* --------------------------------------------------------------- Version */
+
+/** Name des aktiven Offline-Speichers, z. B. "schlummer-v27". */
+let cacheStand = null;
+
+async function ermittleCacheStand() {
+  if (!('caches' in window)) return;
+  try {
+    const namen = await caches.keys();
+    const eigene = namen.filter((n) => n.startsWith('schlummer-')).sort();
+    if (eigene.length) {
+      cacheStand = eigene[eigene.length - 1];
+      if (route === 'mehr') render();
+    }
+  } catch (err) {
+    // Ohne Offline-Speicher bleibt die Anzeige einfach leer.
+  }
+}
+
+/**
+ * Sucht nach einer neueren Fassung. Der Service Worker übernimmt sie sofort,
+ * die laufende Seite zeigt sie aber erst nach dem Neuladen.
+ */
+async function updatePruefen() {
+  if (!('serviceWorker' in navigator)) return toast('Dieser Browser hat keinen Offline-Speicher');
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) return toast('Noch kein Offline-Speicher eingerichtet');
+  let gefunden = Boolean(reg.waiting || reg.installing);
+  const merken = () => {
+    gefunden = true;
+  };
+  reg.addEventListener('updatefound', merken);
+  toast('Suche nach einer neueren Version …');
+  try {
+    await reg.update();
+  } catch (err) {
+    reg.removeEventListener('updatefound', merken);
+    return toast('Keine Verbindung - später nochmal versuchen');
+  }
+  // Dem Browser einen Moment geben, den Fund zu melden.
+  await new Promise((fertig) => window.setTimeout(fertig, 1500));
+  reg.removeEventListener('updatefound', merken);
+  await ermittleCacheStand();
+  if (gefunden) {
+    toast('Neue Version geladen', { label: 'Jetzt neu starten', run: () => window.location.reload() });
+  } else {
+    toast(`Du hast die neueste Version (${APP_VERSION})`);
+  }
+}
+
 /* ------------------------------------------------------------ Erinnerung */
 
 function scheduleReminder() {
@@ -3793,6 +3874,7 @@ audio.onAudioChange(() => {
 });
 
 store.load();
+ermittleCacheStand();
 ensurePersistentStorage().then(render);
 audio.setVolume(store.getState().settings.soundVolume);
 render();
