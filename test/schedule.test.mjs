@@ -10,7 +10,10 @@ import {
   findConflicts,
   findMissingNights,
   napCap,
+  catchUpFor,
+  classifyWaking,
   nightBalance,
+  nightDebt,
   nightShiftFor,
   daysSince,
   bandForAge,
@@ -783,4 +786,99 @@ test('Ohne gelernten Bedarf gibt es keine Weckempfehlung', () => {
     napCap({ need24h: null, nightMinutes: 670, napStart: at(11, 0) }),
     null
   );
+});
+
+/* ------------------------------------------- Wachphasen und ihr Nachspiel */
+
+// Nacht vom 14. auf den 15.: 19:00 bis 06:00, also 11 Stunden im Bett.
+const nacht = (interruptions) => ({
+  type: 'night',
+  start: at(19, 0, 14),
+  end: at(6, 0, 15),
+  interruptions
+});
+
+test('Wachphasen werden nach ihrer Lage in der Nacht eingeordnet', () => {
+  const n = nacht([]);
+  // Kurz nach dem Einschlafen: noch nicht müde genug.
+  assert.equal(classifyWaking(n.start, n.end, { start: at(20, 30, 14), end: at(21, 0, 14) }), 'frueh');
+  // Genau an der Drei-Stunden-Grenze zählt noch als früh.
+  assert.equal(classifyWaking(n.start, n.end, { start: at(22, 0, 14), end: at(22, 20, 14) }), 'frueh');
+  // Mitten in der Nacht.
+  assert.equal(classifyWaking(n.start, n.end, { start: at(1, 0, 15), end: at(1, 30, 15) }), 'mitte');
+  // Gegen Morgen: endet weniger als 2,5 Stunden vor dem Aufstehen.
+  assert.equal(classifyWaking(n.start, n.end, { start: at(4, 0, 15), end: at(4, 30, 15) }), 'spaet');
+});
+
+test('Eine offene Wachphase wird am erwarteten Nachtende gemessen', () => {
+  const n = nacht([]);
+  assert.equal(classifyWaking(n.start, n.end, { start: at(4, 30, 15), end: null }), 'spaet');
+});
+
+test('Das Minus der Nacht zählt gegen die übliche Nacht, nicht gegen eine Norm', () => {
+  // 11 Stunden im Bett, 1:45 davon wach -> 9:15 Schlaf gegenüber üblichen 11:00.
+  const m = nightDebt(nacht([{ start: at(0, 30, 15), end: at(2, 15, 15) }]), 660);
+  assert.equal(m.awake, 105);
+  assert.equal(m.slept, 555);
+  assert.equal(m.debt, 105);
+
+  // War die Nacht ohnehin länger als üblich, bleibt trotz Wachphase kein Minus.
+  assert.equal(nightDebt(nacht([{ start: at(0, 30, 15), end: at(1, 0, 15) }]), 600).debt, 0);
+});
+
+test('Ohne übliche Nachtlänge gibt es kein Minus', () => {
+  assert.equal(nightDebt(nacht([]), 0), null);
+  assert.equal(nightDebt(null, 660), null);
+});
+
+test('Ein Schlafminus wird zur Hälfte auf Nickerchen und Bettzeit verteilt', () => {
+  const a = catchUpFor(50);
+  assert.equal(a.nap, 25);
+  assert.equal(a.bedtime, 25);
+  // Ein großes Minus wird gedeckelt: der Rhythmus soll nicht kippen.
+  assert.equal(catchUpFor(105).nap, 45);
+  assert.equal(catchUpFor(105).bedtime, 30);
+  // Kleine Abweichungen sind kein Fall für eine Empfehlung.
+  assert.equal(catchUpFor(20), null);
+  assert.equal(catchUpFor(0), null);
+  // Der Nickerchen-Anteil ist bei 45 Minuten gedeckelt.
+  assert.equal(catchUpFor(240).nap, 45);
+});
+
+test('Nach einer kurzen Nacht darf das Nickerchen länger dauern', () => {
+  const ohne = napCap({ need24h: 767, nightMinutes: 670, sleptToday: 0, napStart: at(11, 15) });
+  const mit = napCap({ need24h: 767, nightMinutes: 670, sleptToday: 0, napStart: at(11, 15), bonus: 45 });
+  assert.equal(mit.maxDay - ohne.maxDay, 45);
+  assert.equal(fmtTime(mit.at), '13:37');
+});
+
+test('Bei Wachphasen am Rand der Nacht bleibt die Bettzeit, wo sie ist', () => {
+  // Gegen Morgen und kurz nach dem Einschlafen: ein früherer Abend verlängert
+  // nur die Zeit im Bett - das Minus geht ganz auf das Nickerchen.
+  for (const lage of ['spaet', 'frueh']) {
+    const a = catchUpFor(105, lage);
+    assert.equal(a.bedtime, 0, lage);
+    assert.equal(a.nap, 60, lage);
+  }
+  // Mitten in der Nacht wird weiter aufgeteilt.
+  assert.equal(catchUpFor(105, 'mitte').bedtime, 30);
+  assert.equal(catchUpFor(105, 'mitte').nap, 45);
+});
+
+test('Eine Untergrenze hält die Bettzeit, während der Tag vorrückt', () => {
+  const band = bandForAge(450);
+  const morningWake = at(6, 15);
+  const args = { band, morningWake, sleeps: [], now: at(7, 0), pressureMinutes: -30 };
+  const normal = buildPlan(args);
+  const geschont = buildPlan({ ...args, bedtimeNotBefore: at(19, 10) });
+
+  // Der Tag rückt in beiden Fällen gleich vor ...
+  const erstesNickerchen = (p) => p.blocks.find((b) => b.type === 'nap').start;
+  assert.equal(+erstesNickerchen(normal), +erstesNickerchen(geschont));
+  // ... nur der Abend bleibt stehen.
+  assert.ok(normal.bedtime < at(19, 10));
+  assert.equal(fmtTime(geschont.bedtime), '19:10');
+
+  // Eine Untergrenze, die ohnehin früher liegt, ändert nichts.
+  assert.equal(+buildPlan({ ...args, bedtimeNotBefore: at(16, 0) }).bedtime, +normal.bedtime);
 });

@@ -147,9 +147,20 @@ export function fmtCountdown(ms) {
  * @param {Date}   opts.now           Jetzt-Zeitpunkt
  * @param {number} opts.pressureMinutes Korrektur der noch geplanten
  *        Wachfenster durch den Schlafdruck des Tages (negativ = kürzer)
+ * @param {Date} [opts.bedtimeNotBefore] Untergrenze für die Bettzeit. Ein
+ *        Schlafminus spricht nicht immer für einen früheren Abend: lag das
+ *        Kind kurz nach dem Einschlafen oder gegen Morgen wach, verlängert
+ *        ein früherer Beginn der Nacht nur die Zeit im Bett.
  * @returns {{blocks: Array, bedtime: Date, dayTimeSleepMin: number, plannedNaps: number}}
  */
-export function buildPlan({ band, morningWake, sleeps = [], now = new Date(), pressureMinutes = 0 }) {
+export function buildPlan({
+  band,
+  morningWake,
+  sleeps = [],
+  now = new Date(),
+  pressureMinutes = 0,
+  bedtimeNotBefore = null
+}) {
   // Die Nacht dieses Abends: egal ob sie noch läuft oder schon beendet ist
   // (etwa weil das Kind kurz wach war). Sie beendet den geplanten Tag.
   const nights = sleeps
@@ -297,12 +308,15 @@ export function buildPlan({ band, morningWake, sleeps = [], now = new Date(), pr
   }
 
   // Bettzeit: letztes (längstes) Wachfenster, aber im plausiblen Abendfenster.
-  const lastWindow = Math.max(30, wakeWindowFor(band, totalWindows - 1, totalWindows) + pressureMinutes);
+  const lastWindow = Math.max(
+    30,
+    wakeWindowFor(band, totalWindows - 1, totalWindows) + pressureMinutes
+  );
   let bedtime = addMinutes(cursor, lastWindow);
   // Bei echtem Schlafdefizit darf die Bettzeit unter die übliche Untergrenze
   // rutschen - genau dafür ist eine frühe Bettzeit da. Nie vor 17:30.
   const floor = timeOnDay(morningWake, band.bedtimeEarliest);
-  const earliest =
+  let earliest =
     pressureMinutes < 0
       ? new Date(
           Math.max(
@@ -311,6 +325,7 @@ export function buildPlan({ band, morningWake, sleeps = [], now = new Date(), pr
           )
         )
       : floor;
+  if (bedtimeNotBefore && bedtimeNotBefore > earliest) earliest = new Date(bedtimeNotBefore);
   const latest = timeOnDay(morningWake, band.bedtimeLatest);
   if (bedtime < earliest) bedtime = earliest;
   if (bedtime > latest) bedtime = latest;
@@ -353,6 +368,85 @@ export function awakeMinutesIn(sleep, now = new Date()) {
  */
 export function nightShiftFor(awakeMinutes = 0) {
   return Math.min(60, Math.round(Math.max(0, awakeMinutes) / 2));
+}
+
+/**
+ * Wohin in der Nacht eine Wachphase gehört. Die Lage sagt mehr als die Dauer,
+ * denn die drei Gruppen haben verschiedene Ursachen:
+ *
+ *   früh  - kurz nach dem Einschlafen wieder wach. Das Kind war meist noch
+ *           nicht müde genug: zu früh ins Bett oder zu viel Tagschlaf.
+ *   spät  - kurz vor der gewohnten Aufstehzeit. Die Nacht ist rechnerisch
+ *           fast voll; früher ins Bett verschärft das eher.
+ *   Mitte - dazwischen. Über die Zeiten meist nicht zu erklären.
+ *
+ * @param {Date} bedtime      Beginn der Nacht
+ * @param {Date} morningEnd   Ende der Nacht (tatsächlich oder erwartet)
+ * @param {object} gap        Wachphase mit start/end
+ * @returns {'frueh'|'mitte'|'spaet'}
+ */
+export function classifyWaking(bedtime, morningEnd, gap) {
+  const end = gap.end || morningEnd;
+  if (minutesBetween(bedtime, gap.start) <= 3 * 60) return 'frueh';
+  if (minutesBetween(end, morningEnd) <= 150) return 'spaet';
+  return 'mitte';
+}
+
+/**
+ * Was die vergangene Nacht gegenüber einer gewöhnlichen Nacht gekostet hat.
+ *
+ * Gerechnet wird gegen die Nacht, die diese Familie sonst hat - nicht gegen
+ * einen Richtwert. Eine Nacht, die ohnehin länger war als üblich, hinterlässt
+ * trotz Wachphase kein Minus.
+ *
+ * @param {object} night      Nachteintrag mit Date-Objekten
+ * @param {number} usualNight übliche Nachtlänge in Minuten
+ * @param {Date}   [now]      für eine noch laufende Nacht
+ * @returns {null|{awake:number, slept:number, usual:number, debt:number}}
+ */
+export function nightDebt(night, usualNight, now = new Date()) {
+  if (!night || !usualNight) return null;
+  const end = night.end || now;
+  const awake = awakeMinutesIn(night, now);
+  const slept = Math.max(0, minutesBetween(night.start, end) - awake);
+  return {
+    awake,
+    slept: Math.round(slept),
+    usual: Math.round(usualNight),
+    debt: Math.max(0, Math.round(usualNight - slept))
+  };
+}
+
+/**
+ * Wie ein Schlafminus über den Tag hereingeholt wird.
+ *
+ * Nicht alles auf einmal: ein sehr langes Nickerchen nimmt der nächsten Nacht
+ * wieder Zeit und trägt das Problem weiter. Deshalb die Hälfte über ein
+ * längeres Nickerchen, die andere Hälfte über eine frühere Bettzeit - beides
+ * begrenzt, damit der Rhythmus nicht kippt.
+ *
+ * Die Ausnahme sind Wachphasen am Rand der Nacht. Wer schon um vier wach im
+ * Bett liegt, liegt nicht deshalb wach, weil er zu spät hineingekommen ist -
+ * und wer eine Stunde nach dem Einschlafen wieder aufwacht, war noch nicht
+ * müde genug. In beiden Fällen verlängert ein früherer Beginn der Nacht nur
+ * die Zeit im Bett. Das Minus geht dann ganz auf das Nickerchen.
+ *
+ * @param {number} debt    Fehlminuten der letzten Nacht
+ * @param {string} [lage]  Lage der Wachphase: 'frueh' | 'mitte' | 'spaet'
+ * @returns {null|{nap:number, bedtime:number, debt:number, lage:string|null}}
+ */
+export function catchUpFor(debt = 0, lage = null) {
+  if (!debt || debt < 30) return null;
+  const rund = (minuten, deckel) => Math.min(deckel, Math.round(minuten / 5) * 5);
+  if (lage === 'spaet' || lage === 'frueh') {
+    return { debt: Math.round(debt), nap: rund(debt, 60), bedtime: 0, lage };
+  }
+  return {
+    debt: Math.round(debt),
+    nap: rund(debt / 2, 45),
+    bedtime: rund(debt / 2, 30),
+    lage
+  };
 }
 
 /**
@@ -632,11 +726,14 @@ export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake }) 
  * @param {number} o.sleptToday    schon geschlafener Tagschlaf (ohne das laufende)
  * @param {Date}   o.napStart      Beginn des laufenden Nickerchens
  * @param {number} [o.minNap=45]   so kurz wird nie geweckt
+ * @param {number} [o.bonus=0]     Nachholminuten nach einer kurzen Nacht
  * @returns {null|{at:Date, maxDay:number, nightNeed:number}}
  */
-export function napCap({ need24h, nightMinutes, sleptToday = 0, napStart, minNap = 45 }) {
+export function napCap({ need24h, nightMinutes, sleptToday = 0, napStart, minNap = 45, bonus = 0 }) {
   if (!need24h || !nightMinutes || !napStart) return null;
-  const maxDay = Math.round(need24h - nightMinutes);
+  // War die letzte Nacht kurz, darf der Tag heute mehr bekommen: die
+  // fehlenden Minuten sind schon weg, die holt die nächste Nacht nicht nach.
+  const maxDay = Math.round(need24h - nightMinutes + Math.max(0, bonus));
   if (maxDay <= 0) return null;
   const rest = maxDay - sleptToday;
   if (rest < minNap) return null;

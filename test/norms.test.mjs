@@ -136,3 +136,41 @@ test('Ohne erfasste Wachphasen bleibt der Bericht leer, aber gueltig', () => {
   assert.equal(r.laengste, null);
   assert.equal(r.haeufigsteStunde, null);
 });
+
+test('Der Bericht trennt Wachphasen nach ihrer Lage in der Nacht', () => {
+  const nacht = (tag, gaps) => ({
+    type: 'night',
+    start: new Date(2024, 4, tag, 19, 0),
+    end: new Date(2024, 4, tag + 1, 6, 0),
+    interruptions: gaps
+  });
+  const sleeps = [
+    // Zweimal gegen Morgen und lang, einmal kurz nach dem Einschlafen.
+    nacht(17, [{ start: new Date(2024, 4, 18, 4, 20), end: new Date(2024, 4, 18, 5, 20) }]),
+    nacht(18, [{ start: new Date(2024, 4, 19, 4, 30), end: new Date(2024, 4, 19, 6, 0) }]),
+    nacht(19, [{ start: new Date(2024, 4, 19, 20, 30), end: new Date(2024, 4, 19, 20, 50) }])
+  ];
+  const r = nightWakingReport(sleeps, { nights: 14, now: NOW });
+
+  assert.equal(r.naechte, 3);
+  assert.equal(r.mitWachphasen, 3);
+  assert.deepEqual(r.phasen.spaet, { anzahl: 2, minuten: 150 });
+  assert.deepEqual(r.phasen.frueh, { anzahl: 1, minuten: 20 });
+  assert.deepEqual(r.phasen.mitte, { anzahl: 0, minuten: 0 });
+  assert.equal(r.schwerpunkt, 'spaet');
+  assert.equal(r.laengste.lage, 'spaet');
+});
+
+test('Ohne deutlichen Schwerpunkt sagt der Bericht nichts über die Lage', () => {
+  const nacht = (tag, gaps) => ({
+    type: 'night',
+    start: new Date(2024, 4, tag, 19, 0),
+    end: new Date(2024, 4, tag + 1, 6, 0),
+    interruptions: gaps
+  });
+  const sleeps = [
+    nacht(18, [{ start: new Date(2024, 4, 18, 20, 30), end: new Date(2024, 4, 18, 21, 0) }]),
+    nacht(19, [{ start: new Date(2024, 4, 20, 4, 30), end: new Date(2024, 4, 20, 5, 0) }])
+  ];
+  assert.equal(nightWakingReport(sleeps, { nights: 14, now: NOW }).schwerpunkt, null);
+});

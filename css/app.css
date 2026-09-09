@@ -1353,3 +1353,18 @@ button:focus-visible,
   border-left: 3px solid var(--accent);
   padding-left: 10px;
 }
+
+/* Fehlende Nachtstunden: die eine Zeile, die den Tag heute erklärt. */
+.hint.warn {
+  border-left: 3px solid var(--warn);
+  padding-left: 10px;
+}
+
+/* Zwischenüberschrift innerhalb einer Karte. */
+h3.sub {
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}

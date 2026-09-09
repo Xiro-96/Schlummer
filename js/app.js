@@ -8,10 +8,13 @@ import {
   bandForAge,
   buildPlan,
   awakeMinutesIn,
+  catchUpFor,
+  classifyWaking,
   buildDayReview,
   findConflicts,
   findMissingNights,
   napCap,
+  nightDebt,
   nightBalance,
   fmtCountdown,
   daysSince,
@@ -74,7 +77,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.4';
+export const APP_VERSION = '3.5';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -183,6 +186,16 @@ function context(now = new Date()) {
     .pop();
   const nightMinutes = lastNight ? store.netSleepMinutes(lastNight, now) : 0;
   const pressure = sleepPressure(band, napsDone, sleptSoFar, nightMinutes);
+  // Die längste Wachphase der Nacht gibt die Richtung vor: lag sie am Rand
+  // der Nacht, spricht das Schlafminus nicht für einen früheren Abend.
+  const laengsteLage =
+    lastNight && lastNight.end
+      ? (lastNight.interruptions || [])
+          .filter((g) => g.end)
+          .sort((a, b) => b.end - b.start - (a.end - a.start))
+          .map((g) => classifyWaking(lastNight.start, lastNight.end, g))[0] || null
+      : null;
+  const randphase = laengsteLage === 'frueh' || laengsteLage === 'spaet';
   // Der eigene 24-Stunden-Bedarf: Tag- und Nachtschlaf laufen gegeneinander.
   const need = store.getState().settings.learning ? sleepNeed24h(store.allSleeps(), now) : null;
   const plan = buildPlan({
@@ -190,7 +203,12 @@ function context(now = new Date()) {
     morningWake,
     sleeps: activeNaps,
     now,
-    pressureMinutes: pressure.minutes
+    pressureMinutes: pressure.minutes,
+    // Lag die Wachphase am Rand der Nacht, bleibt der Abend, wo er sonst ist.
+    bedtimeNotBefore:
+      randphase && profile.active && profile.values.bedtime != null
+        ? timeOnDay(morningWake, toClock(profile.values.bedtime))
+        : null
   });
   const status = wakeStatus({
     band,
@@ -299,19 +317,27 @@ function context(now = new Date()) {
     profile.active && profile.values.bedtime != null && profile.values.morning != null
       ? (profile.values.morning - profile.values.bedtime + 24 * 60) % (24 * 60)
       : band.nightSleepMin;
+  // Was die letzte Nacht gekostet hat - und wie der Tag es hereinholt.
+  const minus = lastNight && lastNight.end ? nightDebt(lastNight, gewohnteNacht, now) : null;
+  const nachholen = minus ? catchUpFor(minus.debt, laengsteLage) : null;
   const deckel =
     need && running && running.type !== 'night'
       ? napCap({
           need24h: need.minutes,
           nightMinutes: gewohnteNacht,
           sleptToday: sleptSoFar,
-          napStart: running.start
+          napStart: running.start,
+          bonus: nachholen ? nachholen.nap : 0
         })
       : null;
 
   return {
     need,
     bilanz,
+    gewohnteNacht,
+    minus,
+    nachholen,
+    laengsteLage,
     gewohntesAufstehen,
     deckel,
     formZeiten,
@@ -930,11 +956,29 @@ function sleepDetailCard(ctx) {
  * Die vergangene Nacht auf einen Blick - und der Knopf, um nachträglich eine
  * Wachphase einzutragen. Das passiert meist erst am Morgen danach.
  */
+const WACHPHASE_LAGE = {
+  frueh: {
+    name: 'kurz nach dem Einschlafen',
+    deutung: 'Sie war da meist noch nicht müde genug - ein späterer Beginn der Nacht hilft eher als ein früherer.'
+  },
+  mitte: {
+    name: 'mitten in der Nacht',
+    deutung: 'Mitten in der Nacht lässt sich das über die Schlafzeiten meist nicht erklären.'
+  },
+  spaet: {
+    name: 'gegen Morgen',
+    deutung: 'Gegen Morgen ist die Nacht rechnerisch fast voll - hier hilft ein späterer Beginn der Nacht, kein früherer.'
+  }
+};
+
 function lastNightCard(ctx) {
-  const { lastNight, nightMinutes, now, status } = ctx;
+  const { lastNight, nightMinutes, now, status, minus, nachholen, plan } = ctx;
   if (!lastNight || status.sleeping || status.nightWaking) return '';
   const gaps = lastNight.interruptions || [];
   const wach = awakeMinutesIn(lastNight, now);
+  const lagen = gaps
+    .filter((g) => g.end)
+    .map((g) => classifyWaking(lastNight.start, lastNight.end, g));
   return `
     <div class="card">
       <div class="card-head">
@@ -951,7 +995,9 @@ function lastNightCard(ctx) {
           ? `<ul class="list compare">${gaps
               .map(
                 (gap, i) => `<li>
-                  <span class="grow">Nachts wach</span>
+                  <span class="grow">Nachts wach${
+                    lagen[i] ? ` <small class="muted">${WACHPHASE_LAGE[lagen[i]].name}</small>` : ''
+                  }</span>
                   <small class="muted">${fmtTime(gap.start)}${
                     gap.end
                       ? `-${fmtTime(gap.end)} &middot; ${fmtDuration(minutesBetween(gap.start, gap.end))}`
@@ -962,6 +1008,32 @@ function lastNightCard(ctx) {
                 </li>`
               )
               .join('')}</ul>`
+          : ''
+      }
+      ${
+        minus && nachholen
+          ? `<p class="hint warn">
+              Das sind <strong>${fmtDuration(minus.debt)}</strong> weniger als ihre übliche Nacht
+              (${fmtDuration(minus.usual)}). Diese Minuten holt die nächste Nacht nicht von selbst
+              nach - der Tag muss das übernehmen:
+             </p>
+             <ul class="list compare">
+               <li><span class="grow">Nickerchen darf länger</span>
+                 <strong>+ ${fmtDuration(nachholen.nap)}</strong></li>
+               <li><span class="grow">Bettzeit heute</span>
+                 <strong>${
+                   !plan.bedtime
+                     ? `bis zu ${fmtDuration(nachholen.bedtime)} früher`
+                     : nachholen.bedtime
+                       ? fmtTime(plan.bedtime)
+                       : `wie sonst &middot; ${fmtTime(plan.bedtime)}`
+                 }</strong></li>
+             </ul>
+             ${
+               nachholen.lage
+                 ? `<p class="hint">${esc(WACHPHASE_LAGE[nachholen.lage].deutung)}</p>`
+                 : ''
+             }`
           : ''
       }
       <div class="row tight">
@@ -1886,6 +1958,32 @@ function nachtKarte() {
               ${fmtShort2(bericht.laengste.nacht)} ab ${fmtTime(bericht.laengste.start)}.</p>`
           : '<p class="hint">In den erfassten Nächten ist keine Wachphase eingetragen.</p>'
       }
+      ${
+        bericht.minutenGesamt
+          ? `<h3 class="sub">Wo in der Nacht</h3>
+             <ul class="list compare">
+               ${['frueh', 'mitte', 'spaet']
+                 .map(
+                   (lage) => `<li>
+                     <span class="grow">${esc(WACHPHASE_LAGE[lage].name)}</span>
+                     <small class="muted">${bericht.phasen[lage].anzahl}×</small>
+                     <strong>${fmtDuration(bericht.phasen[lage].minuten)}</strong>
+                   </li>`
+                 )
+                 .join('')}
+             </ul>
+             <p class="hint">
+               ${
+                 bericht.schwerpunkt
+                   ? `Der Schwerpunkt liegt <strong>${esc(
+                       WACHPHASE_LAGE[bericht.schwerpunkt].name
+                     )}</strong>. ${esc(WACHPHASE_LAGE[bericht.schwerpunkt].deutung)}`
+                   : `Die Wachphasen verteilen sich über die ganze Nacht - daraus lässt sich
+                      keine Richtung für die Schlafzeiten ableiten.`
+               }
+             </p>`
+          : ''
+      }
       <button class="chip" data-action="toggle" data-key="nachthilfe" aria-expanded="${offen}">
         ${offen ? 'Weniger' : 'Was in dieser Phase hilft'}
       </button>
@@ -2119,13 +2217,15 @@ function viewStatistik() {
                             <small class="muted">${fmtTime(s.start)}${
                               s.end
                                 ? `-${fmtTime(s.end)} &middot; ${fmtDuration(
-                                    minutesBetween(s.start, s.end)
+                                    store.netSleepMinutes(s)
                                   )}`
                                 : ' - läuft'
                             }${
-                              s.type === 'night' && s.wakings != null
-                                ? ` &middot; ${s.wakings}× wach`
-                                : ''
+                              awakeMinutesIn(s)
+                                ? ` &middot; ${fmtDuration(awakeMinutesIn(s))} wach`
+                                : s.type === 'night' && s.wakings != null
+                                  ? ` &middot; ${s.wakings}× wach`
+                                  : ''
                             }</small>
                           </span>
                           <button class="chip" data-action="rate-sleep" data-id="${esc(s.id)}"

@@ -8,7 +8,7 @@
  * Reine Funktionen, keine Speicher- oder DOM-Zugriffe.
  */
 import { NIGHT_NORMS } from './data.js';
-import { DAY, minutesBetween } from './schedule.js';
+import { DAY, classifyWaking, minutesBetween } from './schedule.js';
 
 const DAYS_PER_MONTH = 30.44;
 
@@ -102,6 +102,13 @@ export function nightWakingReport(sleeps, { nights = 14, now = new Date() } = {}
   let mitWachphasen = 0;
   let laengste = null;
   const stunden = new Map();
+  // Wo in der Nacht die Wachphasen liegen - das trennt "war noch nicht müde"
+  // von "die Nacht war fast vorbei".
+  const phasen = {
+    frueh: { anzahl: 0, minuten: 0 },
+    mitte: { anzahl: 0, minuten: 0 },
+    spaet: { anzahl: 0, minuten: 0 }
+  };
   for (const nacht of naechte) {
     let inDieserNacht = 0;
     for (const gap of nacht.interruptions) {
@@ -111,13 +118,23 @@ export function nightWakingReport(sleeps, { nights = 14, now = new Date() } = {}
       inDieserNacht += dauer;
       const stunde = gap.start.getHours();
       stunden.set(stunde, (stunden.get(stunde) || 0) + 1);
+      const lage = classifyWaking(nacht.start, nacht.end, gap);
+      phasen[lage].anzahl += 1;
+      phasen[lage].minuten += dauer;
       if (!laengste || dauer > laengste.minuten) {
-        laengste = { minuten: dauer, start: gap.start, nacht: nacht.start };
+        laengste = { minuten: dauer, start: gap.start, nacht: nacht.start, lage };
       }
     }
     if (inDieserNacht > 0) mitWachphasen++;
     minutenGesamt += inDieserNacht;
   }
+  // Der Schwerpunkt ist die Gruppe mit den meisten wach verbrachten Minuten -
+  // und nur dann eine Aussage wert, wenn sie deutlich vorne liegt.
+  const sortiert = Object.entries(phasen).sort((a, b) => b[1].minuten - a[1].minuten);
+  const schwerpunkt =
+    sortiert[0][1].minuten > 0 && sortiert[0][1].minuten >= 1.5 * sortiert[1][1].minuten
+      ? sortiert[0][0]
+      : null;
   let haeufigsteStunde = null;
   let beste = 0;
   for (const [stunde, anzahl] of stunden) {
@@ -133,7 +150,9 @@ export function nightWakingReport(sleeps, { nights = 14, now = new Date() } = {}
     minutenSchnitt: naechte.length ? Math.round(minutenGesamt / naechte.length) : 0,
     laengste,
     anteil: naechte.length ? mitWachphasen / naechte.length : 0,
-    haeufigsteStunde
+    haeufigsteStunde,
+    phasen,
+    schwerpunkt
   };
 }
 
