@@ -8,6 +8,7 @@ import {
   bandForAge,
   buildPlan,
   awakeMinutesIn,
+  bedtimeFromBudget,
   catchUpFor,
   classifyWaking,
   buildDayReview,
@@ -31,6 +32,7 @@ import {
 import {
   bandForNapCount,
   expectedNapCount,
+  napCountBoundary,
   learnProfile,
   sleepNeed24h,
   napTransitionReport,
@@ -77,7 +79,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.5';
+export const APP_VERSION = '3.6';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -198,18 +200,41 @@ function context(now = new Date()) {
   const randphase = laengsteLage === 'frueh' || laengsteLage === 'spaet';
   // Der eigene 24-Stunden-Bedarf: Tag- und Nachtschlaf laufen gegeneinander.
   const need = store.getState().settings.learning ? sleepNeed24h(store.allSleeps(), now) : null;
-  const plan = buildPlan({
+  const gewohntesAufstehen =
+    profile.active && profile.values.morning != null
+      ? timeOnDay(morningWake, toClock(profile.values.morning))
+      : morningWake;
+  const gewohnteBettzeit =
+    profile.active && profile.values.bedtime != null
+      ? timeOnDay(morningWake, toClock(profile.values.bedtime))
+      : null;
+
+  const planArgs = {
     band,
     morningWake,
     sleeps: activeNaps,
     now,
     pressureMinutes: pressure.minutes,
     // Lag die Wachphase am Rand der Nacht, bleibt der Abend, wo er sonst ist.
-    bedtimeNotBefore:
-      randphase && profile.active && profile.values.bedtime != null
-        ? timeOnDay(morningWake, toClock(profile.values.bedtime))
-        : null
-  });
+    bedtimeNotBefore: randphase ? gewohnteBettzeit : null
+  };
+  // Zwei Durchgänge: der erste sagt, wie viel heute am Tag geschlafen wird,
+  // der zweite hält die Bettzeit daran fest. Sonst empfiehlt der Plan einen
+  // frühen Abend und die Bilanz warnt daneben vor genau dieser Bettzeit.
+  let plan = buildPlan(planArgs);
+  if (need) {
+    const tagschlaf = plan.blocks
+      .filter((b) => b.type === 'nap')
+      .reduce((sum, b) => sum + minutesBetween(b.start, b.end), 0);
+    const ausBudget = bedtimeFromBudget({
+      need24h: need.minutes,
+      dayMinutes: tagschlaf,
+      morningWake: gewohntesAufstehen
+    });
+    if (ausBudget && (!planArgs.bedtimeNotBefore || ausBudget > planArgs.bedtimeNotBefore)) {
+      plan = buildPlan({ ...planArgs, bedtimeNotBefore: ausBudget });
+    }
+  }
   const status = wakeStatus({
     band,
     lastWakeUp: store.lastWakeUp(now),
@@ -283,25 +308,14 @@ function context(now = new Date()) {
   }
 
   // "früh los = zwei, spät los = eines" in den gelernten Zeiten des Kindes.
-  let formZeiten = null;
-  if (profile.active && profile.byNapCount) {
-    const formen = Object.entries(profile.byNapCount)
-      .filter(([, f]) => f.firstNapStart != null && f.days >= 1.5)
-      .map(([anzahl, f]) => ({ anzahl: Number(anzahl), start: f.firstNapStart }))
-      .sort((a, b) => a.start - b.start);
-    if (formen.length === 2) {
-      // Die Grenze liegt in der Mitte zwischen den beiden üblichen Startzeiten.
-      const grenze = Math.round((formen[0].start + formen[1].start) / 2);
-      formZeiten = `erstes Nickerchen vor ${toClock(grenze)} meist ${formen[0].anzahl}, danach ${formen[1].anzahl}`;
-    }
-  }
+  // Dieselbe Grenze, nach der auch gerechnet wird - nicht eine zweite.
+  const grenze = napCountBoundary(profile);
+  const formZeiten = grenze
+    ? `erstes Nickerchen vor ${toClock(grenze.minute)} meist ${grenze.frueh.anzahl}, danach ${grenze.spaet.anzahl}`
+    : null;
 
   // Wie viel Nachtschlaf bleibt nach dem heutigen Tagschlaf - und wie lange
   // darf das laufende Nickerchen noch dauern, ohne der Nacht Zeit zu nehmen?
-  const gewohntesAufstehen =
-    profile.active && profile.values.morning != null
-      ? timeOnDay(morningWake, toClock(profile.values.morning))
-      : morningWake;
   const bilanz =
     need && plan.bedtime
       ? nightBalance({
@@ -335,6 +349,7 @@ function context(now = new Date()) {
     need,
     bilanz,
     gewohnteNacht,
+    gewohnteBettzeit,
     minus,
     nachholen,
     laengsteLage,
@@ -797,19 +812,6 @@ function sleepDetailCard(ctx) {
             </div>`
           : ''
       }
-      ${
-        // Was mittags geschlafen wird, fehlt nachts - deshalb hier der Deckel.
-        ctx.deckel && !isNight
-          ? `<p class="hint budget">
-              <strong>Wecken empfohlen um ${fmtTime(ctx.deckel.at)}.</strong>
-              ${esc(store.getState().child.name || 'Dein Kind')} braucht rund
-              ${fmtDuration(ctx.need.minutes)} Schlaf pro Tag. Bei
-              ${fmtDuration(ctx.deckel.maxDay)} Tagschlaf bleiben der Nacht
-              ${fmtDuration(ctx.deckel.nightNeed)} - länger im Bett heißt meist
-              nachts wach.
-            </p>`
-          : ''
-      }
       <p class="hint">
         ${
           isNight
@@ -822,6 +824,22 @@ function sleepDetailCard(ctx) {
         }
         Stimmt die Startzeit nicht, schieb sie mit den Knöpfen zurecht.
       </p>
+      ${
+        // Die Obergrenze, nicht die Erwartung: was mittags geschlafen wird,
+        // fehlt nachts. Deshalb steht sie unter der voraussichtlichen Zeit
+        // und nicht darüber - sonst stehen zwei Uhrzeiten nebeneinander und
+        // es ist nicht zu erkennen, welche der Plan meint.
+        ctx.deckel && !isNight
+          ? `<p class="hint budget">
+              Schläft sie länger: <strong>bis ${fmtTime(ctx.deckel.at)}</strong> ist Luft.
+              ${esc(store.getState().child.name || 'Dein Kind')} braucht rund
+              ${fmtDuration(ctx.need.minutes)} Schlaf pro Tag. Bei
+              ${fmtDuration(ctx.deckel.maxDay)} Tagschlaf bleiben der Nacht
+              ${fmtDuration(ctx.deckel.nightNeed)} - länger im Bett heißt meist
+              nachts wach.
+            </p>`
+          : ''
+      }
     </div>`;
   }
 
@@ -972,7 +990,7 @@ const WACHPHASE_LAGE = {
 };
 
 function lastNightCard(ctx) {
-  const { lastNight, nightMinutes, now, status, minus, nachholen, plan } = ctx;
+  const { lastNight, nightMinutes, now, status, minus, nachholen, plan, gewohnteBettzeit } = ctx;
   if (!lastNight || status.sleeping || status.nightWaking) return '';
   const gaps = lastNight.interruptions || [];
   const wach = awakeMinutesIn(lastNight, now);
@@ -1021,13 +1039,18 @@ function lastNightCard(ctx) {
                <li><span class="grow">Nickerchen darf länger</span>
                  <strong>+ ${fmtDuration(nachholen.nap)}</strong></li>
                <li><span class="grow">Bettzeit heute</span>
-                 <strong>${
-                   !plan.bedtime
-                     ? `bis zu ${fmtDuration(nachholen.bedtime)} früher`
-                     : nachholen.bedtime
-                       ? fmtTime(plan.bedtime)
-                       : `wie sonst &middot; ${fmtTime(plan.bedtime)}`
-                 }</strong></li>
+                 <strong>${(() => {
+                   // Nicht die Absicht anzeigen, sondern das Ergebnis: der
+                   // Plan hat das letzte Wort, sonst nennen Karte und Plan
+                   // zwei verschiedene Zeiten.
+                   if (!plan.bedtime) return `bis zu ${fmtDuration(nachholen.bedtime)} früher`;
+                   const frueher = gewohnteBettzeit
+                     ? minutesBetween(plan.bedtime, gewohnteBettzeit)
+                     : 0;
+                   return frueher >= 10
+                     ? `${fmtTime(plan.bedtime)} &middot; ${fmtDuration(frueher)} früher`
+                     : `wie sonst &middot; ${fmtTime(plan.bedtime)}`;
+                 })()}</strong></li>
              </ul>
              ${
                nachholen.lage

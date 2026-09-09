@@ -6,6 +6,7 @@ import {
   blend,
   collectSamples,
   expectedNapCount,
+  napCountBoundary,
   learnProfile,
   napTransitionReport,
   napTrend,
@@ -513,4 +514,39 @@ test('Der Trend liefert einen Punkt je Tag, aufsteigend', () => {
   assert.equal(punkte[0].anzahl, 2);
   assert.equal(punkte[1].anzahl, 1);
   assert.ok(punkte[0].tag < punkte[1].tag, 'aufsteigend sortiert');
+});
+
+test('Die Grenze zwischen zwei Tagesformen wird nach ihrer Häufigkeit gezogen', () => {
+  // Tage mit 2 Nickerchen beginnen um 10:12, Tage mit einem um 12:04.
+  const profile = {
+    active: true,
+    byNapCount: {
+      1: { firstNapStart: 12 * 60 + 4, days: 4.5 },
+      2: { firstNapStart: 10 * 60 + 12, days: 2.38 }
+    }
+  };
+  // Genau in der Mitte läge die Grenze bei 11:08. Weil ein Nickerchen am Tag
+  // aber fast doppelt so häufig ist, wandert sie nach vorn auf 10:51.
+  assert.equal(napCountBoundary(profile).minute, 10 * 60 + 51);
+
+  const um = (h, m) => new Date(2024, 4, 15, h, m);
+  assert.equal(expectedNapCount(profile, um(11, 0)), 1); // vorher: 2
+  assert.equal(expectedNapCount(profile, um(10, 40)), 2);
+  assert.equal(expectedNapCount(profile, um(13, 0)), 1);
+});
+
+test('Bei gleich vielen Tagen liegt die Grenze wieder in der Mitte', () => {
+  const profile = {
+    active: true,
+    byNapCount: {
+      1: { firstNapStart: 12 * 60, days: 3 },
+      2: { firstNapStart: 10 * 60, days: 3 }
+    }
+  };
+  assert.equal(napCountBoundary(profile).minute, 11 * 60);
+});
+
+test('Ohne zwei belegte Formen gibt es keine Grenze', () => {
+  assert.equal(napCountBoundary({ active: true, byNapCount: { 1: { firstNapStart: 700, days: 5 } } }), null);
+  assert.equal(napCountBoundary({ active: false }), null);
 });

@@ -290,17 +290,19 @@ export function buildPlan({
       wakeWindowFor(band, Math.min(napsDone + i, totalWindows - 1), totalWindows) + pressureMinutes
     );
     const start = addMinutes(cursor, ww);
-    // Ein weiteres Nickerchen lohnt nur, wenn danach noch genug Wachzeit bis
-    // zur spätestmöglichen Bettzeit bleibt. Schläft das Kind erst spät, reicht
-    // eines - sonst läge es abends wach im Bett.
-    if (addMinutes(start, 30 + minEvening) > ceiling) {
-      remainingNaps = i;
-      break;
-    }
     const left = remainingNaps - i;
     const suggested = left > 0 ? budget / left : band.napLengthMin;
     const length = Math.round(Math.min(Math.max(suggested, 30), band.napLengthMin * 1.6));
     const end = addMinutes(start, length);
+    // Ein weiteres Nickerchen lohnt nur, wenn danach noch genug Wachzeit bis
+    // zur spätestmöglichen Bettzeit bleibt. Gemessen wird ab dem Ende des
+    // Nickerchens, nicht ab seinem Beginn: sonst wird ein Nickerchen geplant,
+    // dessen Ende die Bettzeit gegen die Obergrenze drückt - und das Kind
+    // liegt abends wach im Bett, weil es die Wachzeit nicht hatte.
+    if (addMinutes(end, minEvening) > ceiling) {
+      remainingNaps = i;
+      break;
+    }
     blocks.push({ type: 'wake', start: cursor, end: start, actual: false });
     blocks.push({ type: 'nap', start, end, actual: false, index: napsDone + i + 1 });
     budget = Math.max(0, budget - length);
@@ -738,4 +740,28 @@ export function napCap({ need24h, nightMinutes, sleptToday = 0, napStart, minNap
   const rest = maxDay - sleptToday;
   if (rest < minNap) return null;
   return { at: addMinutes(napStart, rest), maxDay, nightNeed: Math.round(nightMinutes) };
+}
+
+/**
+ * Wann die Nacht frühestens beginnen sollte, damit die Zeit im Bett nicht
+ * länger ist als der verbleibende Schlafbedarf.
+ *
+ * Der 24-Stunden-Bedarf ist bei vielen Kindern erstaunlich stabil. Was
+ * mittags geschlafen wird, fehlt nachts - wer trotzdem früher ins Bett
+ * gebracht wird, liegt die Differenz wach. Genau das soll der Plan nicht
+ * empfehlen. Ein Zuschlag fürs Einschlafen bleibt: im Bett sein und schlafen
+ * ist nicht dasselbe.
+ *
+ * @param {object} o
+ * @param {number} o.need24h      gelernter Tagesbedarf in Minuten
+ * @param {number} o.dayMinutes   Tagschlaf dieses Tages (geplant und erfasst)
+ * @param {Date}   o.morningWake  gewohnte Aufstehzeit (an ihrem Tag)
+ * @param {number} [o.settleMin=20] Zuschlag fürs Einschlafen
+ * @returns {null|Date}
+ */
+export function bedtimeFromBudget({ need24h, dayMinutes = 0, morningWake, settleMin = 20 }) {
+  if (!need24h || !morningWake) return null;
+  const nightNeed = Math.max(0, need24h - dayMinutes);
+  const ziel = addMinutes(morningWake, 24 * 60);
+  return addMinutes(ziel, -(nightNeed + settleMin));
 }

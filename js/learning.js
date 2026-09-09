@@ -365,6 +365,17 @@ export function learnProfile(sleeps, band, now = new Date()) {
  * wird mit dem, was für dieses Kind üblich ist: Tage mit einem Nickerchen
  * beginnen später als Tage mit zweien. Ohne genug Tage je Form: null.
  *
+ * Der reine Abstand zur üblichen Startzeit reicht dafür nicht. Er zieht die
+ * Grenze genau in die Mitte zwischen beide Formen und tut so, als wären
+ * beide gleich wahrscheinlich. Sind sie aber nicht: Wer an zwei von drei
+ * Tagen nur ein Nickerchen macht, macht auch im Zweifel eher eines. Die
+ * Grenze wandert deshalb zur selteneren Form hin - gewichtet mit der
+ * Häufigkeit, wie bei jeder Einordnung mit Vorwissen.
+ *
+ * Das ist keine Feinheit: An der Grenze entscheidet sich, ob der Tag ein
+ * oder zwei Nickerchen bekommt - und damit die ganze Bettzeit. Ein paar
+ * Minuten Unterschied im Beginn dürfen den Abend nicht umwerfen.
+ *
  * @param {object} profile        Lernprofil
  * @param {Date}   firstNapStart  Beginn des ersten Nickerchens von heute
  * @returns {number|null} erwartete Anzahl Nickerchen des Tages
@@ -374,8 +385,15 @@ export function expectedNapCount(profile, firstNapStart) {
   const minute = firstNapStart.getHours() * 60 + firstNapStart.getMinutes();
   const formen = Object.entries(profile.byNapCount)
     .map(([anzahl, form]) => ({ anzahl: Number(anzahl), ...form }))
-    .filter((f) => f.firstNapStart != null && f.days >= 1.5);
+    .filter((f) => f.firstNapStart != null && f.days >= 1.5)
+    .sort((a, b) => a.firstNapStart - b.firstNapStart);
   if (formen.length < 2) return null;
+
+  if (formen.length === 2) {
+    const grenze = napCountBoundary(profile);
+    return minute <= grenze.minute ? formen[0].anzahl : formen[1].anzahl;
+  }
+
   let beste = null;
   for (const f of formen) {
     const abstand = Math.abs(minute - f.firstNapStart);
@@ -702,5 +720,33 @@ export function sleepNeed24h(sleeps, now = new Date(), { days = 21 } = {}) {
     tage: sortiert.length,
     min: sortiert[0],
     max: sortiert[sortiert.length - 1]
+  };
+}
+
+/**
+ * Die Grenze zwischen zwei Tagesformen: bis zu dieser Uhrzeit spricht der
+ * Beginn des ersten Nickerchens für die frühe Form, danach für die späte.
+ *
+ * Gewichtet mit der Häufigkeit beider Formen (siehe expectedNapCount), damit
+ * dieselbe Zahl im Plan steht, nach der auch gerechnet wird.
+ *
+ * @param {object} profile Lernprofil
+ * @returns {null|{minute:number, frueh:object, spaet:object}}
+ */
+export function napCountBoundary(profile) {
+  if (!profile || !profile.active || !profile.byNapCount) return null;
+  const formen = Object.entries(profile.byNapCount)
+    .map(([anzahl, form]) => ({ anzahl: Number(anzahl), ...form }))
+    .filter((f) => f.firstNapStart != null && f.days >= 1.5)
+    .sort((a, b) => a.firstNapStart - b.firstNapStart);
+  if (formen.length !== 2) return null;
+  const [frueh, spaet] = formen;
+  return {
+    minute: Math.round(
+      (frueh.firstNapStart * spaet.days + spaet.firstNapStart * frueh.days) /
+        (frueh.days + spaet.days)
+    ),
+    frueh,
+    spaet
   };
 }

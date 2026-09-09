@@ -6,6 +6,7 @@ import {
   addMinutes,
   ageInDays,
   awakeMinutesIn,
+  bedtimeFromBudget,
   buildDayReview,
   findConflicts,
   findMissingNights,
@@ -881,4 +882,29 @@ test('Eine Untergrenze hält die Bettzeit, während der Tag vorrückt', () => {
 
   // Eine Untergrenze, die ohnehin früher liegt, ändert nichts.
   assert.equal(+buildPlan({ ...args, bedtimeNotBefore: at(16, 0) }).bedtime, +normal.bedtime);
+});
+
+/* -------------------------------------------- Bettzeit aus dem Schlafbudget */
+
+test('Die Bettzeit aus dem Budget lässt Zeit zum Einschlafen', () => {
+  // Bedarf 12:47, davon 1:46 mittags -> 11:01 Nacht. Aufstehen 06:30.
+  const b = bedtimeFromBudget({ need24h: 767, dayMinutes: 106, morningWake: at(6, 30) });
+  assert.equal(fmtTime(b), '19:09'); // 06:30 - 11:01 - 20 Min Einschlafzeit
+  // Ein längeres Nickerchen verschiebt die Bettzeit nach hinten, nicht nach vorn.
+  assert.ok(bedtimeFromBudget({ need24h: 767, dayMinutes: 150, morningWake: at(6, 30) }) > b);
+  assert.equal(bedtimeFromBudget({ need24h: null, morningWake: at(6, 30) }), null);
+});
+
+test('Ein Nickerchen, dessen Ende den Abend auffrisst, wird nicht geplant', () => {
+  const band = bandForAge(450);
+  // Erstes Nickerchen bis 15:30: danach reicht die Wachzeit nicht mehr für
+  // ein zweites plus einen Abend.
+  const plan = buildPlan({
+    band,
+    morningWake: at(6, 15),
+    sleeps: [{ type: 'nap', start: at(13, 30), end: at(15, 30) }],
+    now: at(15, 45)
+  });
+  assert.equal(plan.plannedNaps, 1);
+  assert.ok(plan.bedtime <= timeOnDay(at(6, 15), band.bedtimeLatest));
 });
