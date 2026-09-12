@@ -147,6 +147,10 @@ export function fmtCountdown(ms) {
  * @param {Date}   opts.now           Jetzt-Zeitpunkt
  * @param {number} opts.pressureMinutes Korrektur der noch geplanten
  *        Wachfenster durch den Schlafdruck des Tages (negativ = kürzer)
+ * @param {number} [opts.minFirstWindow] Untergrenze für das Wachfenster vor
+ *        dem ersten Nickerchen des Tages. Gemessen an den eigenen Tagen:
+ *        wird zu früh hingelegt, reicht der Schlafdruck nicht und das
+ *        Nickerchen bricht nach einem Zyklus ab.
  * @param {Date} [opts.bedtimeNotBefore] Untergrenze für die Bettzeit. Ein
  *        Schlafminus spricht nicht immer für einen früheren Abend: lag das
  *        Kind kurz nach dem Einschlafen oder gegen Morgen wach, verlängert
@@ -159,6 +163,7 @@ export function buildPlan({
   sleeps = [],
   now = new Date(),
   pressureMinutes = 0,
+  minFirstWindow = 0,
   bedtimeNotBefore = null
 }) {
   // Die Nacht dieses Abends: egal ob sie noch läuft oder schon beendet ist
@@ -285,10 +290,13 @@ export function buildPlan({
   const minEvening = Math.round(lastWindowRaw * 0.75);
 
   for (let i = 0; i < remainingNaps; i++) {
-    const ww = Math.max(
+    let ww = Math.max(
       30,
       wakeWindowFor(band, Math.min(napsDone + i, totalWindows - 1), totalWindows) + pressureMinutes
     );
+    // Das erste Nickerchen des Tages nie vor der Wachzeit, die bei diesem
+    // Kind überhaupt zu einem richtigen Nickerchen führt.
+    if (napsDone + i === 0 && minFirstWindow > ww) ww = minFirstWindow;
     const start = addMinutes(cursor, ww);
     const left = remainingNaps - i;
     const suggested = left > 0 ? budget / left : band.napLengthMin;
@@ -318,7 +326,7 @@ export function buildPlan({
   // Bei echtem Schlafdefizit darf die Bettzeit unter die übliche Untergrenze
   // rutschen - genau dafür ist eine frühe Bettzeit da. Nie vor 17:30.
   const floor = timeOnDay(morningWake, band.bedtimeEarliest);
-  let earliest =
+  const earliest =
     pressureMinutes < 0
       ? new Date(
           Math.max(
@@ -327,10 +335,15 @@ export function buildPlan({
           )
         )
       : floor;
-  if (bedtimeNotBefore && bedtimeNotBefore > earliest) earliest = new Date(bedtimeNotBefore);
   const latest = timeOnDay(morningWake, band.bedtimeLatest);
   if (bedtime < earliest) bedtime = earliest;
   if (bedtime > latest) bedtime = latest;
+  // Eine ausdrückliche Untergrenze schlägt das gelernte Abendfenster: Das
+  // Fenster bildet die bisherige Routine ab, die Untergrenze das, was heute
+  // rechnerisch nötig ist. Die Altersobergrenze bleibt trotzdem stehen.
+  if (bedtimeNotBefore && bedtime < bedtimeNotBefore) {
+    bedtime = new Date(Math.min(bedtimeNotBefore.getTime(), ceiling.getTime()));
+  }
   // Hat der letzte Schlaf lange gedauert oder spät geendet, zählt die
   // Mindestwachzeit mehr als die gewohnte Bettzeit: vorher ist das Kind nicht
   // müde. Die altersübliche Obergrenze bleibt trotzdem stehen.

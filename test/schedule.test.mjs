@@ -884,6 +884,17 @@ test('Eine Untergrenze hält die Bettzeit, während der Tag vorrückt', () => {
   assert.equal(+buildPlan({ ...args, bedtimeNotBefore: at(16, 0) }).bedtime, +normal.bedtime);
 });
 
+test('Die Untergrenze schlägt das gelernte Abendfenster, nicht die Altersgrenze', () => {
+  const band = { ...bandForAge(450), bedtimeLatest: '19:30', bedtimeCeiling: '20:15' };
+  const args = { band, morningWake: at(6, 30), sleeps: [], now: at(7, 0) };
+  // Ohne Untergrenze deckelt das enge gelernte Fenster bei 19:30.
+  assert.ok(buildPlan(args).bedtime <= at(19, 30));
+  // Sagt das Schlafbudget 19:55, darf der Plan dorthin ...
+  assert.equal(fmtTime(buildPlan({ ...args, bedtimeNotBefore: at(19, 55) }).bedtime), '19:55');
+  // ... aber nie über die Altersobergrenze hinaus.
+  assert.equal(fmtTime(buildPlan({ ...args, bedtimeNotBefore: at(21, 0) }).bedtime), '20:15');
+});
+
 /* -------------------------------------------- Bettzeit aus dem Schlafbudget */
 
 test('Die Bettzeit aus dem Budget lässt Zeit zum Einschlafen', () => {
@@ -907,4 +918,17 @@ test('Ein Nickerchen, dessen Ende den Abend auffrisst, wird nicht geplant', () =
   });
   assert.equal(plan.plannedNaps, 1);
   assert.ok(plan.bedtime <= timeOnDay(at(6, 15), band.bedtimeLatest));
+});
+
+test('Das erste Nickerchen wird nicht vor der Mindestwachzeit geplant', () => {
+  const band = bandForAge(400); // zwei Nickerchen, kurzes erstes Fenster
+  const args = { band, morningWake: at(6, 30), sleeps: [], now: at(7, 0) };
+  const ohne = buildPlan(args);
+  const mit = buildPlan({ ...args, minFirstWindow: 4 * 60 });
+
+  const erstes = (p) => p.blocks.find((b) => b.type === 'nap').start;
+  assert.ok(erstes(ohne) < at(10, 30));
+  assert.equal(fmtTime(erstes(mit)), '10:30');
+  // Eine Untergrenze unterhalb des ohnehin geplanten Fensters ändert nichts.
+  assert.equal(+erstes(buildPlan({ ...args, minFirstWindow: 60 })), +erstes(ohne));
 });

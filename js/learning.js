@@ -750,3 +750,109 @@ export function napCountBoundary(profile) {
     spaet
   };
 }
+
+/** Median einer Zahlenreihe. */
+function median(werte) {
+  const s = [...werte].sort((a, b) => a - b);
+  if (!s.length) return null;
+  const mitte = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mitte] : (s[mitte - 1] + s[mitte]) / 2;
+}
+
+/** Pearson-Korrelation - grobe Richtungsangabe, kein Beweis. */
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return 0;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let c = 0;
+  let vx = 0;
+  let vy = 0;
+  for (let i = 0; i < n; i++) {
+    c += (xs[i] - mx) * (ys[i] - my);
+    vx += (xs[i] - mx) ** 2;
+    vy += (ys[i] - my) ** 2;
+  }
+  return vx > 0 && vy > 0 ? c / Math.sqrt(vx * vy) : 0;
+}
+
+/**
+ * Was passiert, wenn das erste Nickerchen früher oder später beginnt?
+ *
+ * Gemessen wird das Wachfenster vom Aufstehen bis zum ersten Nickerchen
+ * gegen die Länge genau dieses Nickerchens. Bei vielen Kindern ist der
+ * Zusammenhang deutlich: zu früh hingelegt heißt kurz geschlafen, weil der
+ * Schlafdruck noch nicht reicht. Genau das erzeugt dann Tage mit zu wenig
+ * Tagschlaf - und einen langen, quengeligen Nachmittag.
+ *
+ * Die Schwelle wird nicht geraten, sondern gesucht: geprüft werden Grenzen
+ * im Viertelstundenraster im mittleren Bereich der beobachteten Fenster. Die
+ * Antwort kommt nur, wenn beide Gruppen genug Tage haben, der Unterschied
+ * deutlich ist und die Richtung stimmt - sonst null statt einer Scheinregel.
+ *
+ * @param {object[]} sleeps   Einträge mit Date-Objekten
+ * @param {object}   [opts]
+ * @returns {null|{n:number, r:number, schwelle:number, kurz:object, lang:object, paare:Array}}
+ */
+export function napWindowEffect(sleeps, { days = 28, now = new Date(), minGruppe = 4 } = {}) {
+  const from = new Date(now.getTime() - days * DAY);
+  const naps = sleeps
+    .filter((s) => s.type === 'nap' && s.end && s.start >= from && s.start <= now)
+    .sort((a, b) => a.start - b.start);
+  const nights = sleeps.filter((s) => s.type === 'night' && s.end).sort((a, b) => a.start - b.start);
+
+  const paare = [];
+  const gesehen = new Set();
+  for (const nap of naps) {
+    const key = dayKey(nap.start);
+    // Nur das erste Nickerchen des Tages: nur dort ist das Wachfenster die
+    // Nacht davor und damit über die Tage vergleichbar.
+    if (gesehen.has(key)) continue;
+    gesehen.add(key);
+    let letzteNacht = null;
+    for (const n of nights) {
+      if (n.end <= nap.start) letzteNacht = n;
+      else break;
+    }
+    if (!letzteNacht) continue;
+    const fenster = minutesBetween(letzteNacht.end, nap.start);
+    // Unplausible Abstände (fehlende Nacht, Fehleintrag) draußen lassen.
+    if (fenster < 60 || fenster > 9 * 60) continue;
+    paare.push({ tag: nap.start, fenster, laenge: minutesBetween(nap.start, nap.end) });
+  }
+  if (paare.length < 2 * minGruppe) return null;
+
+  const r = pearson(
+    paare.map((p) => p.fenster),
+    paare.map((p) => p.laenge)
+  );
+  if (!Number.isFinite(r) || r < 0.4) return null;
+
+  const sortiert = [...paare].sort((a, b) => a.fenster - b.fenster);
+  const von = sortiert[Math.floor(sortiert.length * 0.25)].fenster;
+  const bis = sortiert[Math.ceil(sortiert.length * 0.75) - 1].fenster;
+  const kandidaten = [];
+  for (let s = Math.ceil(von / 15) * 15; s <= bis; s += 15) {
+    const kurz = paare.filter((p) => p.fenster < s);
+    const lang = paare.filter((p) => p.fenster >= s);
+    if (kurz.length < minGruppe || lang.length < minGruppe) continue;
+    const mk = median(kurz.map((p) => p.laenge));
+    const ml = median(lang.map((p) => p.laenge));
+    kandidaten.push({
+      schwelle: s,
+      unterschied: ml - mk,
+      kurz: { tage: kurz.length, median: Math.round(mk) },
+      lang: { tage: lang.length, median: Math.round(ml) }
+    });
+  }
+  if (!kandidaten.length) return null;
+  // Liegt zwischen den Gruppen eine Lücke, trennen viele Schwellen gleich
+  // gut. Dann die mittlere nehmen: die kleinste wäre zu früh (und der Plan
+  // legte wieder zu früh hin), die größte zu streng.
+  const bestesMass = Math.max(...kandidaten.map((k) => k.unterschied));
+  const gleichwertig = kandidaten.filter((k) => bestesMass - k.unterschied <= 1);
+  const beste = gleichwertig[Math.floor((gleichwertig.length - 1) / 2)];
+  // Unter einer halben Stunde Unterschied ist das keine Empfehlung wert.
+  if (beste.unterschied < 30) return null;
+  return { n: paare.length, r, ...beste, paare: sortiert };
+}

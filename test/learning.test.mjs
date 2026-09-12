@@ -7,6 +7,7 @@ import {
   collectSamples,
   expectedNapCount,
   napCountBoundary,
+  napWindowEffect,
   learnProfile,
   napTransitionReport,
   napTrend,
@@ -549,4 +550,50 @@ test('Bei gleich vielen Tagen liegt die Grenze wieder in der Mitte', () => {
 test('Ohne zwei belegte Formen gibt es keine Grenze', () => {
   assert.equal(napCountBoundary({ active: true, byNapCount: { 1: { firstNapStart: 700, days: 5 } } }), null);
   assert.equal(napCountBoundary({ active: false }), null);
+});
+
+test('Der Zusammenhang von Wachfenster und Nickerchenlänge wird gemessen', () => {
+  // 12 Tage: an sechs wird nach 3 Stunden hingelegt (30 Min Nickerchen),
+  // an sechs nach 5 Stunden (110 Min).
+  const sleeps = [];
+  for (let tag = 1; tag <= 12; tag++) {
+    const frueh = tag % 2 === 1;
+    sleeps.push({
+      type: 'night',
+      start: new Date(2024, 4, tag - 1, 19, 0),
+      end: new Date(2024, 4, tag, 7, 0)
+    });
+    const start = new Date(2024, 4, tag, frueh ? 10 : 12, 0);
+    sleeps.push({ type: 'nap', start, end: new Date(start.getTime() + (frueh ? 30 : 110) * 60000) });
+  }
+  const e = napWindowEffect(sleeps, { now: new Date(2024, 4, 13, 9, 0) });
+
+  assert.equal(e.n, 12);
+  assert.ok(e.r > 0.9, `r war ${e.r}`);
+  assert.equal(e.schwelle, 240); // zwischen 3 und 5 Stunden, im Viertelstundenraster
+  assert.equal(e.kurz.median, 30);
+  assert.equal(e.lang.median, 110);
+});
+
+test('Ohne klaren Unterschied gibt es keine Schwelle', () => {
+  // Gleich lange Nickerchen, egal wann sie beginnen.
+  const sleeps = [];
+  for (let tag = 1; tag <= 12; tag++) {
+    sleeps.push({
+      type: 'night',
+      start: new Date(2024, 4, tag - 1, 19, 0),
+      end: new Date(2024, 4, tag, 7, 0)
+    });
+    const start = new Date(2024, 4, tag, tag % 2 ? 10 : 12, 0);
+    sleeps.push({ type: 'nap', start, end: new Date(start.getTime() + 90 * 60000) });
+  }
+  assert.equal(napWindowEffect(sleeps, { now: new Date(2024, 4, 13, 9, 0) }), null);
+});
+
+test('Zu wenige Tage ergeben keine Aussage', () => {
+  const sleeps = [
+    { type: 'night', start: new Date(2024, 4, 1, 19, 0), end: new Date(2024, 4, 2, 7, 0) },
+    { type: 'nap', start: new Date(2024, 4, 2, 10, 0), end: new Date(2024, 4, 2, 10, 30) }
+  ];
+  assert.equal(napWindowEffect(sleeps, { now: new Date(2024, 4, 3, 9, 0) }), null);
 });

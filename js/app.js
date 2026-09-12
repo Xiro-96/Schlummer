@@ -33,6 +33,7 @@ import {
   bandForNapCount,
   expectedNapCount,
   napCountBoundary,
+  napWindowEffect,
   learnProfile,
   sleepNeed24h,
   napTransitionReport,
@@ -79,7 +80,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.6';
+export const APP_VERSION = '3.7';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -209,12 +210,20 @@ function context(now = new Date()) {
       ? timeOnDay(morningWake, toClock(profile.values.bedtime))
       : null;
 
+  // Wie lange muss sie wach sein, damit aus dem Nickerchen mehr wird als ein
+  // Zyklus? An den eigenen Tagen gemessen - null, wenn die Daten das nicht
+  // hergeben.
+  const fenstereffekt = store.getState().settings.learning
+    ? napWindowEffect(store.allSleeps(), { now })
+    : null;
+
   const planArgs = {
     band,
     morningWake,
     sleeps: activeNaps,
     now,
     pressureMinutes: pressure.minutes,
+    minFirstWindow: fenstereffekt ? fenstereffekt.schwelle : 0,
     // Lag die Wachphase am Rand der Nacht, bleibt der Abend, wo er sonst ist.
     bedtimeNotBefore: randphase ? gewohnteBettzeit : null
   };
@@ -350,6 +359,7 @@ function context(now = new Date()) {
     bilanz,
     gewohnteNacht,
     gewohnteBettzeit,
+    fenstereffekt,
     minus,
     nachholen,
     laengsteLage,
@@ -1947,6 +1957,51 @@ function trendKarte() {
     </div>`;
 }
 
+/**
+ * Der Zusammenhang zwischen Wachfenster und Nickerchenlänge - an den eigenen
+ * Tagen gemessen. Für viele Familien ist das die eigentliche Antwort auf
+ * "warum schläft sie mittags nur eine halbe Stunde".
+ */
+function fensterKarte(ctx) {
+  const e = ctx.fenstereffekt;
+  if (!e) return '';
+  const staerke = e.r >= 0.7 ? 'deutlich' : e.r >= 0.55 ? 'erkennbar' : 'schwach';
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Wann das Nickerchen lang wird</h2>
+        <small class="muted">${e.n} erste Nickerchen</small>
+      </div>
+      <p class="hint">
+        Gemessen an den eigenen Tagen: wie lange
+        ${esc(store.getState().child.name || 'dein Kind')} vor dem ersten Nickerchen
+        wach war - und wie lange dieses Nickerchen dann dauerte.
+      </p>
+      <ul class="list compare">
+        <li>
+          <span class="grow">Vor <strong>${fmtDuration(e.schwelle)}</strong> Wachzeit hingelegt</span>
+          <small class="muted">${e.kurz.tage} Tage</small>
+          <strong>${fmtDuration(e.kurz.median)}</strong>
+        </li>
+        <li>
+          <span class="grow">Nach <strong>${fmtDuration(e.schwelle)}</strong> Wachzeit hingelegt</span>
+          <small class="muted">${e.lang.tage} Tage</small>
+          <strong>${fmtDuration(e.lang.median)}</strong>
+        </li>
+      </ul>
+      <p class="hint budget">
+        Das sind <strong>${fmtDuration(e.unterschied)}</strong> Unterschied - der Zusammenhang ist
+        ${staerke} (r&nbsp;=&nbsp;${e.r.toFixed(2).replace('.', ',')}). Zu früh hingelegt reicht der
+        Schlafdruck noch nicht: das Kind wacht nach einem Schlafzyklus wieder auf. Der Plan legt
+        das erste Nickerchen deshalb nicht vor ${fmtDuration(e.schwelle)} Wachzeit.
+      </p>
+      <p class="hint">
+        Beobachtung an den eigenen Daten, kein Beweis - an einzelnen Tagen kann etwas anderes
+        dahinterstecken. Verschieben sich die Zeiten dauerhaft, rechnet sich die Schwelle neu.
+      </p>
+    </div>`;
+}
+
 /** Nächtliches Wachliegen: wie oft, wie lang, wann - und was hilft. */
 function nachtKarte() {
   const bericht = nightWakingReport(store.allSleeps(), { nights: 14 });
@@ -2150,6 +2205,8 @@ function viewStatistik() {
     </div>
 
     ${bilanzKarte(context())}
+
+    ${fensterKarte(context())}
 
     ${trendKarte()}
 
