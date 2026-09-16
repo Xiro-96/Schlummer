@@ -71,7 +71,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.8';
+export const APP_VERSION = '3.9';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -1397,6 +1397,16 @@ function viewHeute() {
                  <button class="ghost" data-action="start-night">Nacht startet</button>`
       }
     </div>
+
+    ${
+      // Sichtbar auf der Startseite, nicht hinter der Wochenleiste versteckt:
+      // Wenn das Kind krank ist, sucht niemand erst in einem Aufklappmenü.
+      ctx.krank
+        ? ''
+        : `<div class="row" style="justify-content:center;margin-bottom:10px">
+            <button class="chip quiet" data-action="toggle-sick">🤒 Kind ist krank</button>
+          </div>`
+    }
 
     ${krankKarte(ctx)}
 

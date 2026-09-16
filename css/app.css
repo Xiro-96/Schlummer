@@ -1389,3 +1389,14 @@ button.ghost.on {
   border-color: color-mix(in srgb, var(--warn) 55%, transparent);
   background: color-mix(in srgb, var(--warn) 18%, transparent);
 }
+
+/* Ein Schalter, den man nur selten braucht - sichtbar, aber zurückhaltend. */
+.chip.quiet {
+  opacity: 0.7;
+  font-size: 0.82rem;
+}
+
+.chip.quiet:hover,
+.chip.quiet:focus-visible {
+  opacity: 1;
+}
