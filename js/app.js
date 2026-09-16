@@ -53,15 +53,6 @@ import {
 } from './norms.js';
 import { clockArc, explainNextSleep, shortFormula } from './explain.js';
 import * as store from './store.js';
-import {
-  EVENT_TYPES,
-  SIDES,
-  describeEvent,
-  eventsForDay,
-  lastEvent,
-  mergeTimeline,
-  summarizeDay
-} from './tracking.js';
 import { SOUNDS, soundById } from './sounds.js';
 import * as audio from './audio.js';
 
@@ -80,7 +71,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.7';
+export const APP_VERSION = '3.8';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -147,7 +138,7 @@ function context(now = new Date()) {
   const days = birth ? ageInDays(birth, store.dueDate(), now) : 0;
   const baseBand = bandForAge(days);
   const profile = store.getState().settings.learning
-    ? learnProfile(store.allSleeps(), baseBand, now)
+    ? learnProfile(store.learningSleeps(), baseBand, now)
     : { active: false, confidence: 0, samples: { windows: 0, naps: 0, days: 0, napDays: 0 }, values: {} };
   const morningWake = store.morningWakeFor(now);
   const sleeps = store.sleepsForPlan(now);
@@ -200,7 +191,7 @@ function context(now = new Date()) {
       : null;
   const randphase = laengsteLage === 'frueh' || laengsteLage === 'spaet';
   // Der eigene 24-Stunden-Bedarf: Tag- und Nachtschlaf laufen gegeneinander.
-  const need = store.getState().settings.learning ? sleepNeed24h(store.allSleeps(), now) : null;
+  const need = store.getState().settings.learning ? sleepNeed24h(store.learningSleeps(), now) : null;
   const gewohntesAufstehen =
     profile.active && profile.values.morning != null
       ? timeOnDay(morningWake, toClock(profile.values.morning))
@@ -210,11 +201,14 @@ function context(now = new Date()) {
       ? timeOnDay(morningWake, toClock(profile.values.bedtime))
       : null;
 
+  // Krank: der Tag laeuft anders und zaehlt nicht fuers Lernen.
+  const krank = store.isSickDay(now);
+
   // Wie lange muss sie wach sein, damit aus dem Nickerchen mehr wird als ein
   // Zyklus? An den eigenen Tagen gemessen - null, wenn die Daten das nicht
   // hergeben.
   const fenstereffekt = store.getState().settings.learning
-    ? napWindowEffect(store.allSleeps(), { now })
+    ? napWindowEffect(store.learningSleeps(), { now })
     : null;
 
   const planArgs = {
@@ -343,8 +337,10 @@ function context(now = new Date()) {
   // Was die letzte Nacht gekostet hat - und wie der Tag es hereinholt.
   const minus = lastNight && lastNight.end ? nightDebt(lastNight, gewohnteNacht, now) : null;
   const nachholen = minus ? catchUpFor(minus.debt, laengsteLage) : null;
+  // An kranken Tagen kein Weckvorschlag: Schlaf ist dann das Wichtigste,
+  // und die Nacht wird ohnehin nicht nach Plan verlaufen.
   const deckel =
-    need && running && running.type !== 'night'
+    need && !krank && running && running.type !== 'night'
       ? napCap({
           need24h: need.minutes,
           nightMinutes: gewohnteNacht,
@@ -360,6 +356,7 @@ function context(now = new Date()) {
     gewohnteNacht,
     gewohnteBettzeit,
     fenstereffekt,
+    krank,
     minus,
     nachholen,
     laengsteLage,
@@ -981,6 +978,74 @@ function sleepDetailCard(ctx) {
 }
 
 /**
+ * Krank: was der Tag für den Plan bedeutet.
+ *
+ * Wichtiger als die Anzeige ist, was im Hintergrund passiert - der Tag wird
+ * vom Lernen ausgenommen. Sonst verstellte eine kranke Woche die Wachfenster
+ * für die gesunden Wochen danach.
+ */
+function krankKarte(ctx, tag = ctx.now) {
+  if (!store.isSickDay(tag)) return '';
+  const offen = expanded.has('krankhilfe');
+  const heute = sameDay(tag, ctx.now);
+  return `
+    <div class="card sick">
+      <div class="card-head">
+        <h2>🤒 Kranker Tag</h2>
+        <small class="muted">${heute ? 'heute' : fmtShort2(tag)}</small>
+      </div>
+      <p class="hint">
+        Dieser Tag zählt <strong>nicht fürs Lernen</strong>. Wachfenster,
+        Nickerchenlänge, Schlafbedarf und die Auswertung der Wachphasen bleiben
+        auf dem Stand der gesunden Tage - im Protokoll und im Rückblick ist der
+        Tag ganz normal zu sehen.
+      </p>
+      ${
+        heute
+          ? `<ul class="list compare">
+              <li><span class="grow">Weckempfehlung mittags</span><strong>aus</strong></li>
+              <li><span class="grow">Erinnerungen</span><strong>aus</strong></li>
+              <li><span class="grow">Zeiten im Plan</span><strong>nur Anhalt</strong></li>
+            </ul>`
+          : ''
+      }
+      <button class="chip" data-action="toggle" data-key="krankhilfe" aria-expanded="${offen}">
+        ${offen ? 'Weniger' : 'Was jetzt normal ist'}
+      </button>
+      ${
+        offen
+          ? `<div class="hint" style="margin-top:10px">
+              <ul>
+                <li><strong>Mehr Schlaf ist zu erwarten.</strong> Kranke Kinder schlafen oft
+                  länger und häufiger am Tag - und werden nachts trotzdem wach. Beides gehört
+                  zusammen und geht meist mit der Krankheit wieder weg.</li>
+                <li><strong>Kürzere Wachfenster.</strong> Wer krank ist, hält nicht so lange
+                  durch. Ein früheres Nickerchen ist jetzt richtig, auch wenn es sonst zu früh
+                  wäre.</li>
+                <li><strong>Den Plan nicht erzwingen.</strong> Schlaf nachholen ist wichtiger
+                  als der Rhythmus. Der stellt sich nach ein paar gesunden Tagen von selbst
+                  wieder ein.</li>
+                <li><strong>Danach kann es holprig bleiben.</strong> Wenn ein Kind sich während
+                  der Krankheit ans Getragen- oder Beigelegtwerden gewöhnt hat, dauert die
+                  Umstellung ein paar Nächte.</li>
+              </ul>
+              <p>
+                Das sind Erfahrungswerte, keine ärztliche Einschätzung. Bei Fieber, das nicht
+                sinkt, bei Atemnot, wenn dein Kind nicht mehr trinken mag oder du unsicher
+                bist: in die Praxis, nicht in eine App.
+              </p>
+            </div>`
+          : ''
+      }
+      <div class="row tight">
+        <button class="chip" data-action="toggle-sick" data-date="${tag.toISOString()}">
+          Doch nicht krank
+        </button>
+      </div>
+    </div>`;
+}
+
+/**
  * Die vergangene Nacht auf einen Blick - und der Knopf, um nachträglich eine
  * Wachphase einzutragen. Das passiert meist erst am Morgen danach.
  */
@@ -1159,7 +1224,8 @@ function dayStrip() {
                     const aktiv = sameDay(d, gewaehlt);
                     return `<button class="day ${aktiv ? 'sel' : ''} ${
                       sameDay(d, heute) ? 'today' : ''
-                    }" data-action="pick-day" data-date="${d.toISOString()}"
+                    } ${store.isSickDay(d) ? 'sick' : ''}"
+                      data-action="pick-day" data-date="${d.toISOString()}"
                       ${zukunft ? 'disabled' : ''}
                       aria-current="${aktiv ? 'date' : 'false'}">
                       <small>${WEEKDAYS[i]}</small>
@@ -1186,6 +1252,11 @@ function dayStrip() {
                       : `<button class="chip" data-action="pick-day" data-date="${g.toISOString()}">Gestern</button>`;
                   })()
                 }
+                <button class="chip ${store.isSickDay(gewaehlt) ? 'on' : ''}"
+                  data-action="toggle-sick" data-date="${gewaehlt.toISOString()}"
+                  aria-pressed="${store.isSickDay(gewaehlt)}">
+                  🤒 Krank${store.isSickDay(gewaehlt) ? ' &check;' : ''}
+                </button>
               </div>
               ${
                 reviewDay
@@ -1240,6 +1311,8 @@ function viewTag(day) {
       bedBlock: review.blocks.find((b) => b.type === 'night') || null
     })}
 
+    ${krankKarte({ now: heute }, day)}
+
     <div class="card">
       <div class="card-head">
         <h2>${esc(langerTag)}</h2>
@@ -1280,36 +1353,12 @@ function viewTag(day) {
       }
       <div class="row" style="margin-top:12px">
         <button data-action="add-sleep-on" data-date="${day.toISOString()}">Schlaf nachtragen</button>
+        <button class="ghost ${store.isSickDay(day) ? 'on' : ''}"
+          data-action="toggle-sick" data-date="${day.toISOString()}"
+          aria-pressed="${store.isSickDay(day)}">
+          ${store.isSickDay(day) ? '🤒 Doch nicht krank' : '🤒 War krank'}
+        </button>
       </div>
-    </div>
-
-    ${tagEreignisse(day)}`;
-}
-
-/** Füttern und Wickeln des gewählten Tages. */
-function tagEreignisse(day) {
-  const events = store.allEvents().filter((e) => sameDay(e.at, day));
-  if (!events.length) return '';
-  const summe = summarizeDay(store.allEvents(), day);
-  return `
-    <div class="card">
-      <div class="card-head">
-        <h2>Füttern &amp; Wickeln</h2>
-        <small class="muted">${summe.feeds} Mahlzeiten &middot; ${summe.diapers} Wickeln</small>
-      </div>
-      <ul class="list compare">
-        ${events
-          .slice()
-          .reverse()
-          .slice(0, 12)
-          .map(
-            (e) => `<li>
-              <span class="grow">${esc(describeEvent(e))}</span>
-              <small class="muted">${fmtTime(e.at)}</small>
-            </li>`
-          )
-          .join('')}
-      </ul>
     </div>`;
 }
 
@@ -1319,13 +1368,6 @@ function viewHeute() {
   const ring0 = ringState(ctx);
   const { over, stale } = ring0;
   const quickSound = soundById(store.getState().settings.lastSound);
-  const events = store.allEvents();
-  const feed = lastEvent(events, 'feed');
-  const diaper = lastEvent(events, 'diaper');
-  const ago = (event) => {
-    const minutes = minutesBetween(event.at, now);
-    return minutes < 5 ? 'gerade eben' : `vor ${fmtDuration(minutes)}`;
-  };
   const unrated = store
     .allSleeps()
     .filter((s) => s.end && s.end > addMinutes(now, -12 * 60))
@@ -1356,6 +1398,8 @@ function viewHeute() {
       }
     </div>
 
+    ${krankKarte(ctx)}
+
     ${sleepDetailCard(ctx)}
 
     ${
@@ -1371,22 +1415,6 @@ function viewHeute() {
     }
 
     ${lastNightCard(ctx)}
-
-    <div class="card">
-      <div class="card-head"><h2>Füttern &amp; Wickeln</h2>
-        <small class="muted">${summarizeDay(events, now).feeds} Mahlzeiten heute</small>
-      </div>
-      <div class="row tight">
-        <button data-action="log-feed" data-kind="breast">🤱 Stillen</button>
-        <button data-action="log-feed" data-kind="bottle">🍼 Flasche</button>
-        <button data-action="log-feed" data-kind="solid">🥣 Beikost</button>
-        <button data-action="log-diaper">🧷 Wickeln</button>
-      </div>
-      <p class="hint" style="margin-top:10px">
-        Letzte Mahlzeit: <strong>${feed ? `${esc(describeEvent(feed))}, ${ago(feed)}` : 'noch nichts erfasst'}</strong><br />
-        Zuletzt gewickelt: <strong>${diaper ? `${esc(describeEvent(diaper))}, ${ago(diaper)}` : 'noch nichts erfasst'}</strong>
-      </p>
-    </div>
 
     <div class="card tight spread">
       <div>
@@ -1515,7 +1543,7 @@ function learningCard(ctx) {
         einzelne Ausreißer (Autofahrt, Krankheit) werden gedämpft.
       </p>
       ${
-        transition && !napTransitionReport(store.allSleeps(), baseBand, ctx.now)?.laeuft
+        transition && !napTransitionReport(store.learningSleeps(), baseBand, ctx.now)?.laeuft
           ? `<p class="hint" style="margin-top:8px"><strong>Nap-Übergang:</strong> ${esc(
               transition.text
             )}</p>`
@@ -1869,7 +1897,7 @@ function uhrzeit(minuten) {
  * Phase - und man sieht ihr beim Wandern zu.
  */
 function uebergangKarte(ctx) {
-  const bericht = napTransitionReport(store.allSleeps(), ctx.baseBand, ctx.now);
+  const bericht = napTransitionReport(store.learningSleeps(), ctx.baseBand, ctx.now);
   if (!bericht || !bericht.laeuft) return '';
   const { frueher, zuletzt, verschiebung, laengerUm } = bericht;
   const zeile = (was, a, b, formatiere) =>
@@ -1920,7 +1948,7 @@ function uebergangKarte(ctx) {
 
 /** Verlauf der letzten zwei Wochen: Beginn und Menge des Tagschlafs. */
 function trendKarte() {
-  const punkte = napTrend(store.allSleeps(), { days: 14 });
+  const punkte = napTrend(store.learningSleeps(), { days: 14 });
   if (punkte.length < 4) return '';
   const starts = punkte.map((p) => ({ tag: p.tag, wert: p.start }));
   const laengen = punkte.map((p) => ({ tag: p.tag, wert: p.laenge }));
@@ -2004,7 +2032,7 @@ function fensterKarte(ctx) {
 
 /** Nächtliches Wachliegen: wie oft, wie lang, wann - und was hilft. */
 function nachtKarte() {
-  const bericht = nightWakingReport(store.allSleeps(), { nights: 14 });
+  const bericht = nightWakingReport(store.learningSleeps(), { nights: 14 });
   if (!bericht.naechte) return '';
   const offen = expanded.has('nachthilfe');
   return `
@@ -2099,7 +2127,7 @@ function nachtKarte() {
 function bilanzKarte(ctx) {
   const need = ctx.need;
   if (!need) return '';
-  const muster = nightPatterns(store.allSleeps(), need.minutes, { now: ctx.now });
+  const muster = nightPatterns(store.learningSleeps(), need.minutes, { now: ctx.now });
   const hm = (m) => `${m < 0 ? '-' : ''}${Math.floor(Math.abs(m) / 60)}:${String(Math.abs(m) % 60).padStart(2, '0')}`;
   return `
     <div class="card">
@@ -2161,10 +2189,10 @@ function viewStatistik() {
   const avgNaps = basis.length ? basis.reduce((sum, s) => sum + s.naps, 0) / basis.length : 0;
   const today = stats[stats.length - 1];
   const since = addMinutes(new Date(), -60 * 48);
-  const timeline = mergeTimeline(
-    store.allSleeps().filter((s) => s.start > since),
-    store.allEvents().filter((e) => e.at > since)
-  );
+  const protokoll = store
+    .allSleeps()
+    .filter((s) => s.start > since)
+    .sort((a, b) => b.start - a.start);
 
   return `
     <div class="card">
@@ -2202,6 +2230,18 @@ function viewStatistik() {
         <span><span class="dot nap"></span> Tagschlaf</span>
         <span><span class="dot night"></span> Nacht</span>
       </div>
+      ${(() => {
+        // Die Balken zeigen alles, die Auswertung darunter nur gesunde Tage -
+        // dieser Unterschied muss dastehen, sonst wirkt er wie ein Fehler.
+        const krank = store.sickDayCount(28);
+        return krank
+          ? `<p class="hint" style="margin-top:8px">
+              🤒 ${krank} ${krank === 1 ? 'kranker Tag' : 'kranke Tage'} in den letzten vier
+              Wochen. Die Balken oben zeigen auch sie - alles Weitere auf dieser Seite rechnet
+              ohne sie.
+             </p>`
+          : '';
+      })()}
     </div>
 
     ${bilanzKarte(context())}
@@ -2214,7 +2254,7 @@ function viewStatistik() {
 
     ${(() => {
       const days = store.birthDate() ? ageInDays(store.birthDate(), store.dueDate()) : 0;
-      const avg = averageWakings(store.allSleeps());
+      const avg = averageWakings(store.learningSleeps());
       const comparison = compareWakings(days, avg);
       const hints = clinicHintsFor(days);
       if (!comparison && !hints.length) return '';
@@ -2252,28 +2292,6 @@ function viewStatistik() {
       </div>`;
     })()}
 
-    ${(() => {
-      const events = store.allEvents();
-      const s = summarizeDay(events, new Date());
-      if (!s.feeds && !s.diapers) return '';
-      return `<div class="card">
-        <div class="card-head"><h2>Füttern &amp; Wickeln heute</h2></div>
-        <div class="kpis">
-          <div class="kpi"><div class="v">${s.feeds}</div><div class="k">Mahlzeiten</div></div>
-          <div class="kpi"><div class="v">${s.totalMl ? `${s.totalMl} ml` : '–'}</div><div class="k">Flasche gesamt</div></div>
-          <div class="kpi"><div class="v">${s.diapers}</div><div class="k">Windeln</div></div>
-        </div>
-        <p class="hint" style="margin-top:10px">
-          ${s.breast} × Stillen &middot; ${s.bottle} × Flasche &middot; ${s.solid} × Beikost &middot;
-          ${s.wet} × nass, ${s.dirty} × Stuhl${
-            s.longestFeedGapMin
-              ? ` &middot; längste Pause zwischen zwei Mahlzeiten: ${fmtDuration(s.longestFeedGapMin)}`
-              : ''
-          }
-        </p>
-      </div>`;
-    })()}
-
     <div class="card">
       <div class="card-head">
         <h2>Protokoll</h2>
@@ -2281,13 +2299,10 @@ function viewStatistik() {
       </div>
       <ul class="list">
         ${
-          timeline.length
-            ? timeline
-                .map((item) =>
-                  item.kind === 'sleep'
-                    ? (() => {
-                        const s = item.data;
-                        return `<li>
+          protokoll.length
+            ? protokoll
+                .map(
+                  (s) => `<li>
                           <span class="dot ${s.type}"></span>
                           <span class="grow">
                             <div><strong>${s.type === 'night' ? 'Nacht' : 'Nickerchen'}</strong>
@@ -2311,22 +2326,7 @@ function viewStatistik() {
                           <button class="chip" data-action="rate-sleep" data-id="${esc(s.id)}"
                             title="Bewerten">${s.settle && s.mood ? '★' : '☆'}</button>
                           <button class="chip" data-action="edit-sleep" data-id="${esc(s.id)}">Bearb.</button>
-                        </li>`;
-                      })()
-                    : (() => {
-                        const e = item.data;
-                        return `<li>
-                          <span class="emoji">${EVENT_TYPES[e.type].emoji}</span>
-                          <span class="grow">
-                            <div><strong>${esc(describeEvent(e))}</strong>
-                              <small class="muted">${new Intl.DateTimeFormat('de-DE', {
-                                weekday: 'short'
-                              }).format(e.at)}</small></div>
-                            <small class="muted">${fmtTime(e.at)}</small>
-                          </span>
-                          <button class="chip" data-action="edit-event" data-id="${esc(e.id)}">Bearb.</button>
-                        </li>`;
-                      })()
+                        </li>`
                 )
                 .join('')
             : '<li class="muted">Noch keine Einträge. Starte auf „Heute“ ein Nickerchen.</li>'
@@ -3235,94 +3235,6 @@ function openMorningDialog(day = new Date()) {
   );
 }
 
-/**
- * Sheet für Fütterung und Wickeln. Ein Eintrag entsteht sofort beim Tippen
- * der Schnellzugriffe - hier werden nur noch Details ergänzt oder korrigiert.
- */
-function openEventDialog(id) {
-  const event = store.allEvents().find((e) => e.id === id);
-  if (!event) return;
-  const type = EVENT_TYPES[event.type];
-  const isBreast = event.type === 'feed' && event.kind === 'breast';
-  const isBottle = event.type === 'feed' && event.kind === 'bottle';
-
-  const chips = (field, options, current) =>
-    options
-      .map(
-        (o) => `<button type="button" class="chip" data-action="event-set"
-          data-id="${esc(id)}" data-field="${field}" data-value="${esc(o.id ?? o)}"
-          aria-pressed="${String(current) === String(o.id ?? o)}">${esc(o.label ?? o)}</button>`
-      )
-      .join('');
-
-  dialog.innerHTML = `
-    <div class="rate-sheet">
-      <div class="card-head">
-        <h2>${type.emoji} ${esc(type.label)}</h2>
-        <small class="muted">${esc(describeEvent(event))}</small>
-      </div>
-
-      <fieldset class="rate-group">
-        <legend>Art</legend>
-        ${type.kinds
-          .map(
-            (k) => `<button type="button" class="rate-option" data-action="event-set"
-              data-id="${esc(id)}" data-field="kind" data-value="${esc(k.id)}"
-              aria-pressed="${event.kind === k.id}">
-              <span class="emoji">${k.emoji}</span>
-              <span class="grow"><strong>${esc(k.label)}</strong>
-                <small class="muted">${esc(k.hint)}</small></span>
-            </button>`
-          )
-          .join('')}
-      </fieldset>
-
-      ${
-        isBreast
-          ? `<fieldset class="rate-group">
-              <legend>Seite</legend>
-              <div class="row tight">${chips('side', SIDES, event.side)}</div>
-            </fieldset>
-            <fieldset class="rate-group">
-              <legend>Dauer</legend>
-              <div class="row tight">${chips(
-                'minutes',
-                [5, 10, 15, 20, 25, 30].map((m) => ({ id: m, label: `${m} Min` })),
-                event.minutes
-              )}</div>
-            </fieldset>`
-          : ''
-      }
-
-      ${
-        isBottle
-          ? `<fieldset class="rate-group">
-              <legend>Menge</legend>
-              <div class="row tight">${chips(
-                'amountMl',
-                [30, 60, 90, 120, 150, 180, 210, 240].map((m) => ({ id: m, label: `${m} ml` })),
-                event.amountMl
-              )}</div>
-              <label class="field">Andere Menge (ml)
-                <input type="number" inputmode="numeric" min="0" max="500" step="10"
-                  id="event-ml" value="${event.amountMl ?? ''}" />
-              </label>
-            </fieldset>`
-          : ''
-      }
-
-      <label class="field">Zeitpunkt
-        <input type="datetime-local" id="event-at" value="${localInput(event.at)}" />
-      </label>
-
-      <div class="row" style="justify-content:space-between">
-        <button class="danger" data-action="event-delete" data-id="${esc(id)}">Löschen</button>
-        <button class="primary" data-action="close-dialog">Fertig</button>
-      </div>
-    </div>`;
-  if (!dialog.open) dialog.showModal();
-}
-
 /* -------------------------------------------------------------- Aktionen */
 
 const actions = {
@@ -3337,6 +3249,16 @@ const actions = {
     stripOpen = !stripOpen;
     if (!stripOpen) stripWeek = null;
     render();
+  },
+  'toggle-sick'(el) {
+    const tag = el.dataset.date ? new Date(el.dataset.date) : new Date();
+    const jetztKrank = store.toggleSickDay(tag);
+    render();
+    toast(
+      jetztKrank
+        ? 'Als kranker Tag markiert - er zählt nicht fürs Lernen'
+        : 'Markierung entfernt - der Tag zählt wieder mit'
+    );
   },
   'strip-week'(el) {
     const basis = stripWeek || reviewDay || new Date();
@@ -3450,39 +3372,6 @@ const actions = {
         toast('Danke - der Plan lernt mit');
       }, 350);
     }
-  },
-  'log-feed'(el) {
-    const id = store.addEvent({ type: 'feed', kind: el.dataset.kind });
-    render();
-    openEventDialog(id);
-  },
-  'log-diaper'() {
-    const id = store.addEvent({ type: 'diaper', kind: 'wet' });
-    render();
-    openEventDialog(id);
-  },
-  'edit-event'(el) {
-    openEventDialog(el.dataset.id);
-  },
-  'event-set'(el) {
-    const { id, field, value } = el.dataset;
-    const event = store.allEvents().find((e) => e.id === id);
-    const numeric = field === 'amountMl' || field === 'minutes';
-    const parsed = numeric ? Number(value) : value;
-    // Nochmal dasselbe tippen hebt die Auswahl auf - außer bei der Art.
-    const next = field !== 'kind' && event && event[field] === parsed ? null : parsed;
-    store.updateEvent(id, { [field]: next });
-    openEventDialog(id);
-    render();
-  },
-  'event-delete'(el) {
-    store.deleteEvent(el.dataset.id);
-    if (dialog.open) dialog.close();
-    render();
-    toast('Eintrag gelöscht');
-  },
-  'close-dialog'() {
-    if (dialog.open) dialog.close();
   },
   'rate-sleep'(el) {
     openRatingDialog(el.dataset.id);
@@ -3792,18 +3681,6 @@ document.addEventListener('change', (event) => {
     render();
     return;
   }
-  if (el.id === 'event-ml' || el.id === 'event-at') {
-    const id = dialog.querySelector('[data-action="event-delete"]');
-    if (!id) return;
-    if (el.id === 'event-ml') {
-      const value = el.value === '' ? null : Number(el.value);
-      store.updateEvent(id.dataset.id, { amountMl: Number.isNaN(value) ? null : value });
-    } else {
-      const at = new Date(el.value);
-      if (!Number.isNaN(at.getTime())) store.updateEvent(id.dataset.id, { at });
-    }
-    render();
-  }
   if (el.id === 'rate-prompt') {
     const on = el.checked;
     store.update((s) => {
@@ -4022,6 +3899,9 @@ function scheduleReminder() {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const ctx = context();
   if (ctx.status.sleeping || ctx.status.nightWaking || !ctx.nextSleep) return;
+  // An kranken Tagen hält der Rhythmus ohnehin nicht - eine Erinnerung wäre
+  // hier nur eine Störung.
+  if (ctx.krank) return;
   // Dieselbe Zeit, die auch auf der Startseite steht - nicht das rohe
   // Wachfenster. Sonst erinnert die App an einen anderen Zeitpunkt als den,
   // den sie anzeigt.

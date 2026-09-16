@@ -1368,3 +1368,24 @@ h3.sub {
   color: var(--muted);
   margin: 14px 0 6px;
 }
+
+/* Kranker Tag: sichtbar anders, aber nicht alarmierend. */
+.card.sick {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+.chip.on {
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  color: var(--text);
+}
+
+.strip-days .day.sick .dot {
+  background: var(--warn);
+  opacity: 1;
+}
+
+button.ghost.on {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}

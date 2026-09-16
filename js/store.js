@@ -23,7 +23,10 @@ const DEFAULT_STATE = {
   },
   sleeps: [],
   events: [],
-  notes: []
+  notes: [],
+  // Tage, an denen das Kind krank war (YYYY-MM-DD, Ortszeit). Sie bleiben im
+  // Protokoll sichtbar, werden aber von allem ausgenommen, was lernt.
+  sickDays: []
 };
 
 let state = null;
@@ -43,6 +46,7 @@ export function load() {
     state.sleeps = Array.isArray(state.sleeps) ? state.sleeps : [];
     state.events = Array.isArray(state.events) ? state.events : [];
     state.notes = Array.isArray(state.notes) ? state.notes : [];
+    state.sickDays = Array.isArray(state.sickDays) ? state.sickDays : [];
   } catch (err) {
     console.warn('Gespeicherte Daten unlesbar, starte neu.', err);
     state = clone(DEFAULT_STATE);
@@ -108,6 +112,56 @@ export function allSleeps() {
       }))
     }))
     .sort((a, b) => a.start - b.start);
+}
+
+/* ------------------------------------------------------------ Kranke Tage */
+
+/** Tagesschlüssel in Ortszeit - dieselbe Schreibweise wie im Datumsfeld. */
+export function dayKeyOf(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+}
+
+/** War das Kind an diesem Tag krank? */
+export function isSickDay(date = new Date()) {
+  return load().sickDays.includes(dayKeyOf(date));
+}
+
+/** Krank-Markierung für einen Tag setzen oder entfernen. Gibt den neuen Stand zurück. */
+export function toggleSickDay(date = new Date()) {
+  const key = dayKeyOf(date);
+  const liste = load().sickDays;
+  const index = liste.indexOf(key);
+  if (index === -1) liste.push(key);
+  else liste.splice(index, 1);
+  save();
+  return index === -1;
+}
+
+/** Wie viele der letzten Tage als krank markiert sind. */
+export function sickDayCount(days = 28, now = new Date()) {
+  const von = dayKeyOf(new Date(now.getTime() - days * DAY));
+  const bis = dayKeyOf(now);
+  return load().sickDays.filter((k) => k >= von && k <= bis).length;
+}
+
+/**
+ * Die Einträge, aus denen gelernt werden darf.
+ *
+ * Krankheitstage fliegen raus: Fieber, Zähne und Infekte verschieben alles -
+ * Wachfenster, Nickerchenlänge, Nachtschlaf, Wachphasen. Würde die App das
+ * mitlernen, verstellte eine kranke Woche den Plan für die gesunden Wochen
+ * danach. Im Protokoll und im Rückblick bleiben die Tage sichtbar.
+ *
+ * Maßgeblich ist der Tag, an dem der Eintrag beginnt - die Nacht gehört
+ * also zum Abend davor, so wie überall sonst in der App auch.
+ */
+export function learningSleeps() {
+  const krank = new Set(load().sickDays);
+  if (!krank.size) return allSleeps();
+  return allSleeps().filter((s) => !krank.has(dayKeyOf(s.start)));
 }
 
 /**
@@ -362,40 +416,6 @@ export function lastWakeUp(day = new Date()) {
   return morning;
 }
 
-/* ------------------------------------------------- Füttern und Wickeln */
-
-/** Alle Alltagseinträge mit echten Dates, aufsteigend sortiert. */
-export function allEvents() {
-  return load()
-    .events.map((e) => ({ ...e, at: toDate(e.at) }))
-    .sort((a, b) => a.at - b.at);
-}
-
-export function addEvent({ type, kind, at = new Date(), side = null, amountMl = null, minutes = null, note = '' }) {
-  const id = `e${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-  update((s) => {
-    s.events.push({ id, type, kind, at: at.toISOString(), side, amountMl, minutes, note });
-  });
-  return id;
-}
-
-export function updateEvent(id, patch) {
-  update((s) => {
-    const entry = s.events.find((x) => x.id === id);
-    if (!entry) return;
-    if (patch.at) entry.at = patch.at.toISOString();
-    for (const key of ['type', 'kind', 'side', 'amountMl', 'minutes', 'note']) {
-      if (key in patch) entry[key] = patch[key];
-    }
-  });
-}
-
-export function deleteEvent(id) {
-  update((s) => {
-    s.events = s.events.filter((x) => x.id !== id);
-  });
-}
-
 /* -------------------------------------------------------------- Statistik */
 
 /** Schlafminuten pro Kalendertag der letzten n Tage (älteste zuerst). */
@@ -488,6 +508,7 @@ export function importJSON(text) {
   state = { ...clone(DEFAULT_STATE), ...parsed };
   state.events = Array.isArray(parsed.events) ? parsed.events : [];
   state.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
+  state.sickDays = Array.isArray(parsed.sickDays) ? parsed.sickDays : [];
   state.settings = { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) };
   state.child = { ...DEFAULT_STATE.child, ...(parsed.child || {}) };
   save();
