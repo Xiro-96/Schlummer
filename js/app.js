@@ -71,7 +71,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '3.9';
+export const APP_VERSION = '4.0';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -496,6 +496,17 @@ function arcPath(fromFraction, toFraction, radius = ARC.r) {
  */
 function arcCenter(ctx) {
   const { morningWake, now, status, band, nextSleep } = ctx;
+  // Kranker Tag: kein Countdown. Was zählt, ist der Schlaf, der schon da ist.
+  if (ctx.krank && !status.sleeping && !status.nightWaking) {
+    const geschlafen = ctx.sleeps
+      .filter((x) => x.end && x.type !== 'night')
+      .reduce((summe, x) => summe + minutesBetween(x.start, x.end), 0);
+    return {
+      head: 'Kranker Tag',
+      big: geschlafen ? fmtCompact(geschlafen) : '🤒',
+      sub: geschlafen ? 'Tagschlaf bisher' : 'Der Plan pausiert'
+    };
+  }
   if (status.nightWaking) {
     return {
       head: 'Nachts wach seit',
@@ -553,14 +564,18 @@ function arcCenter(ctx) {
  */
 function dayArc(ctx) {
   const { plan, morningWake, now } = ctx;
+  // An kranken Tagen zeigt der Bogen nur, was wirklich war - keine geplanten
+  // Nickerchen und keine Bettzeit, auf die niemand hinarbeitet.
+  const naps = plan.blocks.filter((b) => b.type === 'nap' && (!ctx.krank || b.actual));
   return arcFigure({
     from: morningWake,
     to: plan.bedtime,
-    naps: plan.blocks.filter((b) => b.type === 'nap'),
+    naps,
     now,
     center: arcCenter(ctx),
-    over: ringState(ctx).over,
-    bedBlock: plan.blocks.find((b) => b.type === 'night') || null
+    over: ctx.krank ? false : ringState(ctx).over,
+    bedBlock: ctx.krank ? null : plan.blocks.find((b) => b.type === 'night') || null,
+    showBedtime: !ctx.krank
   });
 }
 
@@ -576,7 +591,10 @@ function arcFigure({
   center,
   over = false,
   day = null,
-  bedBlock = null
+  bedBlock = null,
+  // An kranken Tagen gibt es keine Bettzeit, auf die jemand hinarbeitet -
+  // der Bogen braucht das Ende trotzdem als Maßstab.
+  showBedtime = true
 }) {
   const morningWake = from;
   const bedtime = to;
@@ -636,14 +654,18 @@ function arcFigure({
           `Aufstehzeit ${fmtTime(morningWake)} ändern`
         )}
         ${label(0, fmtTime(morningWake), 'wake')}
-        ${marker(
-          1,
-          '🌙',
-          'bed',
-          bedBlock ? blockAction(bedBlock) : '',
-          `Bettzeit ${fmtTime(bedtime)} ${bedBlock && bedBlock.actual ? 'bearbeiten' : 'eintragen'}`
-        )}
-        ${label(1, fmtTime(bedtime), 'bed')}
+        ${
+          showBedtime
+            ? `${marker(
+                1,
+                '🌙',
+                'bed',
+                bedBlock ? blockAction(bedBlock) : '',
+                `Bettzeit ${fmtTime(bedtime)} ${bedBlock && bedBlock.actual ? 'bearbeiten' : 'eintragen'}`
+              )}
+              ${label(1, fmtTime(bedtime), 'bed')}`
+            : ''
+        }
         ${naps
           .map((n) => {
             const mid = (at(n.start) + at(n.end)) / 2;
@@ -1003,10 +1025,14 @@ function krankKarte(ctx, tag = ctx.now) {
       ${
         heute
           ? `<ul class="list compare">
-              <li><span class="grow">Weckempfehlung mittags</span><strong>aus</strong></li>
-              <li><span class="grow">Erinnerungen</span><strong>aus</strong></li>
-              <li><span class="grow">Zeiten im Plan</span><strong>nur Anhalt</strong></li>
-            </ul>`
+              <li><span class="grow">Tagesplan und Countdown</span><strong>pausiert</strong></li>
+              <li><span class="grow">Weckempfehlung und Erinnerungen</span><strong>aus</strong></li>
+              <li><span class="grow">Schlaf eintragen</span><strong>freiwillig</strong></li>
+            </ul>
+            <p class="hint">
+              Eintragen kannst du weiter, wenn du magst - der Knopf steht über dieser Karte.
+              Nötig ist es nicht: Diese Tage rechnet die App ohnehin nicht mit.
+            </p>`
           : ''
       }
       <button class="chip" data-action="toggle" data-key="krankhilfe" aria-expanded="${offen}">
@@ -1065,8 +1091,11 @@ const WACHPHASE_LAGE = {
 };
 
 function lastNightCard(ctx) {
-  const { lastNight, nightMinutes, now, status, minus, nachholen, plan, gewohnteBettzeit } = ctx;
+  const { lastNight, nightMinutes, now, status, minus, plan, gewohnteBettzeit } = ctx;
   if (!lastNight || status.sleeping || status.nightWaking) return '';
+  // Wer krank ist, holt keinen Schlaf nach Plan nach - die Empfehlung wäre
+  // hier nur Druck. Was war, steht trotzdem da.
+  const nachholen = ctx.krank ? null : ctx.nachholen;
   const gaps = lastNight.interruptions || [];
   const wach = awakeMinutesIn(lastNight, now);
   const lagen = gaps
@@ -1378,7 +1407,16 @@ function viewHeute() {
 
     ${dayArc(ctx)}
 
-    <div class="row" style="justify-content:center;margin-bottom:6px">
+    ${
+      // Krank und niemand schläft gerade: die App hört auf zu drängeln. Wer
+      // trotzdem etwas festhalten will, klappt die Knöpfe einen Tipp weit auf.
+      ctx.krank && !status.sleeping && !status.nightWaking && !expanded.has('krank-tracken')
+        ? `<div class="row" style="justify-content:center;margin-bottom:10px">
+            <button class="chip quiet" data-action="toggle" data-key="krank-tracken">
+              + Schlaf trotzdem eintragen
+            </button>
+          </div>`
+        : `<div class="row" style="justify-content:center;margin-bottom:6px">
       ${
         status.nightWaking
           ? `<button class="primary" data-action="back-to-sleep">Schläft wieder</button>
@@ -1396,7 +1434,8 @@ function viewHeute() {
               : `<button class="primary" data-action="start-nap">Nickerchen startet</button>
                  <button class="ghost" data-action="start-night">Nacht startet</button>`
       }
-    </div>
+    </div>`
+    }
 
     ${
       // Sichtbar auf der Startseite, nicht hinter der Wochenleiste versteckt:
@@ -1410,9 +1449,10 @@ function viewHeute() {
 
     ${krankKarte(ctx)}
 
-    ${sleepDetailCard(ctx)}
+    ${ctx.krank && !status.sleeping && !status.nightWaking ? '' : sleepDetailCard(ctx)}
 
     ${
+      !ctx.krank &&
       unrated && !(unrated.settle && unrated.mood) && !status.sleeping && !status.nightWaking
         ? `<div class="card tight spread">
             <div>
