@@ -778,3 +778,24 @@ export function bedtimeFromBudget({ need24h, dayMinutes = 0, morningWake, settle
   const ziel = addMinutes(morningWake, 24 * 60);
   return addMinutes(ziel, -(nightNeed + settleMin));
 }
+
+/**
+ * Ein Eintrag, der läuft und läuft: gestartet, aber nie beendet.
+ *
+ * Das passiert leicht - einmal "Nickerchen startet" getippt und danach kam
+ * das Leben dazwischen. Die App zählte bisher stur weiter und behauptete
+ * "Schläft seit 48 Std". Ab einer Dauer, die es nicht geben kann, ist das
+ * kein Schlaf mehr, sondern ein vergessenes Ende.
+ *
+ * @param {object} sleep      laufender Eintrag (ohne end)
+ * @param {Date}   [now]
+ * @param {object} [grenzen]  napMax/nightMax in Minuten
+ * @returns {null|{minutes:number, max:number, type:string}}
+ */
+export function stuckSleep(sleep, now = new Date(), { napMax = 5 * 60, nightMax = 15 * 60 } = {}) {
+  if (!sleep || sleep.end) return null;
+  const minutes = minutesBetween(sleep.start, now);
+  const max = sleep.type === 'night' ? nightMax : napMax;
+  if (minutes <= max) return null;
+  return { minutes: Math.round(minutes), max, type: sleep.type };
+}

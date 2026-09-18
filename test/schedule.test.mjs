@@ -16,6 +16,7 @@ import {
   nightBalance,
   nightDebt,
   nightShiftFor,
+  stuckSleep,
   daysSince,
   bandForAge,
   buildPlan,
@@ -931,4 +932,30 @@ test('Das erste Nickerchen wird nicht vor der Mindestwachzeit geplant', () => {
   assert.equal(fmtTime(erstes(mit)), '10:30');
   // Eine Untergrenze unterhalb des ohnehin geplanten Fensters ändert nichts.
   assert.equal(+erstes(buildPlan({ ...args, minFirstWindow: 60 })), +erstes(ohne));
+});
+
+/* ------------------------------------------ Eintrag ohne Ende */
+
+test('Ein Eintrag, der zu lange läuft, gilt als vergessen beendet', () => {
+  const jetzt = at(12, 0, 17);
+  // Ein Nickerchen von vier Stunden ist lang, aber möglich.
+  assert.equal(stuckSleep({ type: 'nap', start: at(8, 0, 17), end: null }, jetzt), null);
+  // Sechs Stunden nicht mehr.
+  const fest = stuckSleep({ type: 'nap', start: at(6, 0, 17), end: null }, jetzt);
+  assert.equal(fest.minutes, 360);
+  assert.equal(fest.type, 'nap');
+
+  // Nächte dürfen länger laufen - bis 15 Stunden.
+  // 23:00 bis 12:00 sind 13 Stunden: noch im Rahmen.
+  assert.equal(stuckSleep({ type: 'night', start: at(23, 0, 16), end: null }, jetzt), null);
+  // 20:00 bis 12:00 sind 16 Stunden: da wurde das Ende vergessen.
+  assert.equal(stuckSleep({ type: 'night', start: at(20, 0, 16), end: null }, jetzt).minutes, 960);
+});
+
+test('Beendete Einträge hängen nie fest', () => {
+  assert.equal(
+    stuckSleep({ type: 'nap', start: at(6, 0, 15), end: at(7, 0, 15) }, at(12, 0, 17)),
+    null
+  );
+  assert.equal(stuckSleep(null, at(12, 0, 17)), null);
 });

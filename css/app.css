@@ -1400,3 +1400,9 @@ button.ghost.on {
 .chip.quiet:focus-visible {
   opacity: 1;
 }
+
+/* Etwas stimmt nicht mit den Daten - sichtbar, aber ohne Alarm. */
+.card.warn-card {
+  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+  background: color-mix(in srgb, var(--warn) 7%, var(--card));
+}

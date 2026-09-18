@@ -16,6 +16,7 @@ import {
   findMissingNights,
   napCap,
   nightDebt,
+  stuckSleep,
   nightBalance,
   fmtCountdown,
   daysSince,
@@ -71,7 +72,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.0';
+export const APP_VERSION = '4.1';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -203,6 +204,9 @@ function context(now = new Date()) {
 
   // Krank: der Tag laeuft anders und zaehlt nicht fuers Lernen.
   const krank = store.isSickDay(now);
+  // Ein Eintrag, der seit Stunden laeuft, ist kein Schlaf mehr, sondern ein
+  // vergessenes Ende. Er verfaelscht sonst Bogen, Plan und Protokoll.
+  const festgefahren = running ? stuckSleep(running, now) : null;
 
   // Wie lange muss sie wach sein, damit aus dem Nickerchen mehr wird als ein
   // Zyklus? An den eigenen Tagen gemessen - null, wenn die Daten das nicht
@@ -357,6 +361,7 @@ function context(now = new Date()) {
     gewohnteBettzeit,
     fenstereffekt,
     krank,
+    festgefahren,
     minus,
     nachholen,
     laengsteLage,
@@ -496,6 +501,14 @@ function arcPath(fromFraction, toFraction, radius = ARC.r) {
  */
 function arcCenter(ctx) {
   const { morningWake, now, status, band, nextSleep } = ctx;
+  // Ein hängender Eintrag darf nicht als Schlaf durchgehen.
+  if (ctx.festgefahren) {
+    return {
+      head: 'Eintrag ohne Ende',
+      big: '⚠️',
+      sub: `seit ${fmtMitTag(ctx.running.start, now)}`
+    };
+  }
   // Kranker Tag: kein Countdown. Was zählt, ist der Schlaf, der schon da ist.
   if (ctx.krank && !status.sleeping && !status.nightWaking) {
     const geschlafen = ctx.sleeps
@@ -575,7 +588,8 @@ function dayArc(ctx) {
     center: arcCenter(ctx),
     over: ctx.krank ? false : ringState(ctx).over,
     bedBlock: ctx.krank ? null : plan.blocks.find((b) => b.type === 'night') || null,
-    showBedtime: !ctx.krank
+    showBedtime: !ctx.krank,
+    hint: !ctx.krank
   });
 }
 
@@ -594,7 +608,8 @@ function arcFigure({
   bedBlock = null,
   // An kranken Tagen gibt es keine Bettzeit, auf die jemand hinarbeitet -
   // der Bogen braucht das Ende trotzdem als Maßstab.
-  showBedtime = true
+  showBedtime = true,
+  hint = true
 }) {
   const morningWake = from;
   const bedtime = to;
@@ -696,7 +711,11 @@ function arcFigure({
         <div class="sub">${esc(sub)}</div>
       </div>
     </div>
-    <p class="arc-hint">Tippe im Bogen auf ein Symbol, um die Zeit zu ändern.</p>`;
+    ${
+      hint
+        ? '<p class="arc-hint">Tippe im Bogen auf ein Symbol, um die Zeit zu ändern.</p>'
+        : ''
+    }`;
 }
 
 /**
@@ -1000,6 +1019,48 @@ function sleepDetailCard(ctx) {
 }
 
 /**
+ * Ein Eintrag, der nie beendet wurde.
+ *
+ * Wichtig ist hier nicht die Diagnose, sondern der Ausweg: zwei Knöpfe, die
+ * das in einem Tipp geradeziehen. Der Vorschlag ist die übliche Länge für
+ * diese Art Schlaf - damit steht wenigstens etwas Plausibles im Protokoll,
+ * und wer es genauer weiß, korrigiert es danach.
+ */
+function festgefahrenKarte(ctx) {
+  const { festgefahren, running, band, morningWake } = ctx;
+  if (!festgefahren) return '';
+  const vorschlag =
+    running.type === 'night'
+      ? nightEndFor(running.start, morningWake, band)
+      : addMinutes(running.start, band.napLengthMin);
+  const art = running.type === 'night' ? 'Die Nacht' : 'Das Nickerchen';
+  return `
+    <div class="card warn-card">
+      <div class="card-head">
+        <h2>Eintrag ohne Ende</h2>
+        <small class="muted">seit ${fmtMitTag(running.start, ctx.now)}</small>
+      </div>
+      <p class="hint">
+        ${art} läuft seit <strong>${fmtDuration(festgefahren.minutes)}</strong>. So lange kann
+        das nicht gewesen sein - vermutlich wurde das Beenden vergessen. Solange der Eintrag
+        offen ist, stimmt weder der Bogen noch der Plan.
+      </p>
+      <div class="row tight">
+        <button class="primary" data-action="fix-stuck" data-id="${esc(running.id)}"
+          data-end="${vorschlag.toISOString()}">
+          Auf ${fmtMitTag(vorschlag, ctx.now)} beenden
+        </button>
+        <button class="ghost" data-action="edit-sleep" data-id="${esc(running.id)}">
+          Zeiten eintragen
+        </button>
+        <button class="chip danger" data-action="drop-sleep" data-id="${esc(running.id)}">
+          Löschen
+        </button>
+      </div>
+    </div>`;
+}
+
+/**
  * Krank: was der Tag für den Plan bedeutet.
  *
  * Wichtiger als die Anzeige ist, was im Hintergrund passiert - der Tag wird
@@ -1027,11 +1088,12 @@ function krankKarte(ctx, tag = ctx.now) {
           ? `<ul class="list compare">
               <li><span class="grow">Tagesplan und Countdown</span><strong>pausiert</strong></li>
               <li><span class="grow">Weckempfehlung und Erinnerungen</span><strong>aus</strong></li>
-              <li><span class="grow">Schlaf eintragen</span><strong>freiwillig</strong></li>
+              <li><span class="grow">Schlaf mitschreiben</span><strong>aus</strong></li>
             </ul>
             <p class="hint">
-              Eintragen kannst du weiter, wenn du magst - der Knopf steht über dieser Karte.
-              Nötig ist es nicht: Diese Tage rechnet die App ohnehin nicht mit.
+              Kranke Tage laufen anders, als sie sonst laufen - mitgeschriebene Zeiten sagen
+              hier nichts aus, und die App rechnet sie ohnehin nicht mit. Wenn du doch etwas
+              festhalten willst, geht das über <strong>Plan &rarr; Schlaf nachtragen</strong>.
             </p>`
           : ''
       }
@@ -1410,12 +1472,8 @@ function viewHeute() {
     ${
       // Krank und niemand schläft gerade: die App hört auf zu drängeln. Wer
       // trotzdem etwas festhalten will, klappt die Knöpfe einen Tipp weit auf.
-      ctx.krank && !status.sleeping && !status.nightWaking && !expanded.has('krank-tracken')
-        ? `<div class="row" style="justify-content:center;margin-bottom:10px">
-            <button class="chip quiet" data-action="toggle" data-key="krank-tracken">
-              + Schlaf trotzdem eintragen
-            </button>
-          </div>`
+      ctx.festgefahren || (ctx.krank && !status.sleeping && !status.nightWaking)
+        ? ''
         : `<div class="row" style="justify-content:center;margin-bottom:6px">
       ${
         status.nightWaking
@@ -1447,9 +1505,15 @@ function viewHeute() {
           </div>`
     }
 
+    ${festgefahrenKarte(ctx)}
+
     ${krankKarte(ctx)}
 
-    ${ctx.krank && !status.sleeping && !status.nightWaking ? '' : sleepDetailCard(ctx)}
+    ${
+      ctx.festgefahren || (ctx.krank && !status.sleeping && !status.nightWaking)
+        ? ''
+        : sleepDetailCard(ctx)
+    }
 
     ${
       !ctx.krank &&
@@ -2451,6 +2515,10 @@ function pruefKarte() {
 }
 
 /** "Do 20.08." - kurzes Datum für Listen. */
+function fmtMitTag(date, now = new Date()) {
+  return sameDay(date, now) ? fmtTime(date) : `${fmtShort2(date)} ${fmtTime(date)}`;
+}
+
 function fmtShort2(date) {
   return new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(date);
 }
@@ -3547,6 +3615,12 @@ const actions = {
   },
   'new-waking'(el) {
     openWakingDialog(el.dataset.id);
+  },
+  'fix-stuck'(el) {
+    const ende = new Date(el.dataset.end);
+    store.updateSleep(el.dataset.id, { end: ende });
+    render();
+    toast(`Auf ${fmtMitTag(ende)} beendet - Zeiten lassen sich noch anpassen`);
   },
   'drop-sleep'(el) {
     const id = el.dataset.id;
