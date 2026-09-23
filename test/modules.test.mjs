@@ -32,3 +32,37 @@ test('Der Service Worker kennt alle Module', () => {
     assert.ok(sw.includes(`./js/${file}`), `sw.js fehlt js/${file} im Offline-Cache`);
   }
 });
+
+test('Keine echten Kinderdaten im Repo', () => {
+  // Das Repo ist oeffentlich. Testvorlagen duerfen deshalb nur erfundene
+  // Kinder enthalten - einmal ist hier versehentlich ein echtes Protokoll
+  // gelandet, mit Name, Geburtsdatum und fuenf Wochen Schlafzeiten.
+  const WURZEL = join(JS_DIR, '..');
+  const erlaubt = new Set(['Testkind', '']);
+
+  const suche = (verzeichnis) => {
+    for (const eintrag of readdirSync(verzeichnis, { withFileTypes: true })) {
+      if (eintrag.name === 'node_modules' || eintrag.name.startsWith('.')) continue;
+      const pfad = join(verzeichnis, eintrag.name);
+      if (eintrag.isDirectory()) {
+        suche(pfad);
+        continue;
+      }
+      if (!eintrag.name.endsWith('.json') || eintrag.name === 'package-lock.json') continue;
+      let daten;
+      try {
+        daten = JSON.parse(readFileSync(pfad, 'utf8'));
+      } catch {
+        continue;
+      }
+      if (!daten || !Array.isArray(daten.sleeps)) continue;
+      const name = (daten.child && daten.child.name) || '';
+      assert.ok(
+        erlaubt.has(name),
+        `${pfad} enthaelt ein Protokoll von "${name}" - Testvorlagen brauchen erfundene Kinder`
+      );
+    }
+  };
+
+  suche(WURZEL);
+});
