@@ -37,6 +37,7 @@ import {
   napWindowEffect,
   learnProfile,
   sleepNeed24h,
+  usualNightSleep,
   napTransitionReport,
   napTrend,
   napTransitionHint,
@@ -72,7 +73,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.2';
+export const APP_VERSION = '4.3';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -339,12 +340,13 @@ function context(now = new Date()) {
           morningWake: gewohntesAufstehen
         })
       : null;
-  // Die Nacht, die diese Familie üblicherweise hat - aus der gelernten Bettzeit
-  // und Aufstehzeit, sonst aus dem Altersband.
+  // Die Nacht, die diese Familie üblicherweise hat - gemessen als das, was
+  // wirklich geschlafen wurde. Bettzeit bis Aufstehen wäre die Zeit im Bett
+  // und zählt die Wachphasen mit; gegen den 24-Stunden-Bedarf gerechnet, der
+  // Nettoschlaf meint, bliebe für den Tag rechnerisch nichts übrig.
   const gewohnteNacht =
-    profile.active && profile.values.bedtime != null && profile.values.morning != null
-      ? (profile.values.morning - profile.values.bedtime + 24 * 60) % (24 * 60)
-      : band.nightSleepMin;
+    (store.getState().settings.learning ? usualNightSleep(store.learningSleeps(), now) : null) ??
+    band.nightSleepMin;
   // Was die letzte Nacht gekostet hat - und wie der Tag es hereinholt.
   const minus = lastNight && lastNight.end ? nightDebt(lastNight, gewohnteNacht, now) : null;
   const nachholen = minus ? catchUpFor(minus.debt, laengsteLage) : null;
@@ -887,7 +889,14 @@ function sleepDetailCard(ctx) {
         // es ist nicht zu erkennen, welche der Plan meint.
         ctx.deckel && !isNight
           ? `<p class="hint budget">
-              Schläft sie länger: <strong>bis ${fmtTime(ctx.deckel.at)}</strong> ist Luft.
+              ${
+                // Mal ist das Budget die groesszuegigere Angabe, mal die
+                // knappere. Beides muss sich richtig lesen.
+                ctx.deckel.at > expectedEnd
+                  ? `Schläft sie länger: <strong>bis ${fmtTime(ctx.deckel.at)}</strong> ist Luft.`
+                  : `Fürs Schlafbudget wäre <strong>${fmtTime(ctx.deckel.at)}</strong> die Grenze -
+                     was sie danach noch schläft, fehlt der Nacht.`
+              }
               ${esc(store.getState().child.name || 'Dein Kind')} braucht rund
               ${fmtDuration(ctx.need.minutes)} Schlaf pro Tag. Bei
               ${fmtDuration(ctx.deckel.maxDay)} Tagschlaf bleiben der Nacht

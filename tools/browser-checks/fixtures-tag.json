@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "child": {
+    "name": "Testkind",
+    "birthDate": "2025-06-01",
+    "dueDate": ""
+  },
+  "settings": {
+    "morningWake": "07:00",
+    "soundTimerMin": 45,
+    "soundVolume": 0.6,
+    "lastSound": "heartbeat",
+    "learning": true,
+    "napCount": "auto",
+    "ratePrompt": true,
+    "reminders": false,
+    "onboarded": true,
+    "lastBackupAt": null
+  },
+  "sleeps": [
+    {
+      "id": "p9",
+      "type": "nap",
+      "start": "2026-09-09T09:30:00.000Z",
+      "end": "2026-09-09T11:30:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n9",
+      "type": "night",
+      "start": "2026-09-09T17:30:00.000Z",
+      "end": "2026-09-10T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p10",
+      "type": "nap",
+      "start": "2026-09-10T09:45:00.000Z",
+      "end": "2026-09-10T11:40:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n10",
+      "type": "night",
+      "start": "2026-09-10T17:30:00.000Z",
+      "end": "2026-09-11T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": [
+        {
+          "start": "2026-09-10T22:30:00.000Z",
+          "end": "2026-09-10T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "p11",
+      "type": "nap",
+      "start": "2026-09-11T10:00:00.000Z",
+      "end": "2026-09-11T12:10:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n11",
+      "type": "night",
+      "start": "2026-09-11T17:30:00.000Z",
+      "end": "2026-09-12T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p12",
+      "type": "nap",
+      "start": "2026-09-12T09:15:00.000Z",
+      "end": "2026-09-12T10:50:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n12",
+      "type": "night",
+      "start": "2026-09-12T17:30:00.000Z",
+      "end": "2026-09-13T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p13",
+      "type": "nap",
+      "start": "2026-09-13T10:10:00.000Z",
+      "end": "2026-09-13T12:15:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n13",
+      "type": "night",
+      "start": "2026-09-13T17:30:00.000Z",
+      "end": "2026-09-14T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": [
+        {
+          "start": "2026-09-13T22:30:00.000Z",
+          "end": "2026-09-13T23:15:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "p14",
+      "type": "nap",
+      "start": "2026-09-14T09:50:00.000Z",
+      "end": "2026-09-14T11:40:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n14",
+      "type": "night",
+      "start": "2026-09-14T17:30:00.000Z",
+      "end": "2026-09-15T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p15",
+      "type": "nap",
+      "start": "2026-09-15T10:20:00.000Z",
+      "end": "2026-09-15T12:35:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n15",
+      "type": "night",
+      "start": "2026-09-15T17:30:00.000Z",
+      "end": "2026-09-16T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p16",
+      "type": "nap",
+      "start": "2026-09-16T09:40:00.000Z",
+      "end": "2026-09-16T11:25:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n16",
+      "type": "night",
+      "start": "2026-09-16T17:30:00.000Z",
+      "end": "2026-09-17T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": [
+        {
+          "start": "2026-09-16T22:30:00.000Z",
+          "end": "2026-09-16T23:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "p17",
+      "type": "nap",
+      "start": "2026-09-17T10:05:00.000Z",
+      "end": "2026-09-17T12:05:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n17",
+      "type": "night",
+      "start": "2026-09-17T17:30:00.000Z",
+      "end": "2026-09-18T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p18",
+      "type": "nap",
+      "start": "2026-09-18T09:55:00.000Z",
+      "end": "2026-09-18T11:50:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n18",
+      "type": "night",
+      "start": "2026-09-18T17:30:00.000Z",
+      "end": "2026-09-19T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p19",
+      "type": "nap",
+      "start": "2026-09-19T10:15:00.000Z",
+      "end": "2026-09-19T12:20:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n19",
+      "type": "night",
+      "start": "2026-09-19T17:30:00.000Z",
+      "end": "2026-09-20T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": [
+        {
+          "start": "2026-09-19T22:30:00.000Z",
+          "end": "2026-09-19T22:55:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "p20",
+      "type": "nap",
+      "start": "2026-09-20T09:35:00.000Z",
+      "end": "2026-09-20T11:15:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n20",
+      "type": "night",
+      "start": "2026-09-20T17:30:00.000Z",
+      "end": "2026-09-21T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "p21",
+      "type": "nap",
+      "start": "2026-09-21T10:00:00.000Z",
+      "end": "2026-09-21T12:10:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n21",
+      "type": "night",
+      "start": "2026-09-21T17:30:00.000Z",
+      "end": "2026-09-22T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": [
+        {
+          "start": "2026-09-21T22:30:00.000Z",
+          "end": "2026-09-21T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "p22",
+      "type": "nap",
+      "start": "2026-09-22T09:45:00.000Z",
+      "end": "2026-09-22T11:45:00.000Z",
+      "note": "",
+      "settle": "fast",
+      "mood": "happy",
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "n22",
+      "type": "night",
+      "start": "2026-09-22T17:30:00.000Z",
+      "end": "2026-09-23T05:00:00.000Z",
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    },
+    {
+      "id": "heute",
+      "type": "nap",
+      "start": "2026-09-23T09:18:00.000Z",
+      "end": null,
+      "note": "",
+      "settle": null,
+      "mood": null,
+      "wakings": null,
+      "interruptions": []
+    }
+  ],
+  "events": [],
+  "notes": [],
+  "sickDays": [],
+  "appVersion": "4.3"
+}

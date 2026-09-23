@@ -8,6 +8,7 @@ import {
   expectedNapCount,
   napCountBoundary,
   napWindowEffect,
+  usualNightSleep,
   learnProfile,
   napTransitionReport,
   napTrend,
@@ -596,4 +597,59 @@ test('Zu wenige Tage ergeben keine Aussage', () => {
     { type: 'nap', start: new Date(2024, 4, 2, 10, 0), end: new Date(2024, 4, 2, 10, 30) }
   ];
   assert.equal(napWindowEffect(sleeps, { now: new Date(2024, 4, 3, 9, 0) }), null);
+});
+
+test('Die übliche Nacht ist der Schlaf, nicht die Zeit im Bett', () => {
+  // Drei Nächte 19:00-06:00 (11 Std im Bett), davon eine mit 2 Std wach.
+  const nacht = (tag, wachMin = 0) => ({
+    type: 'night',
+    start: new Date(2026, 8, tag, 19, 0),
+    end: new Date(2026, 8, tag + 1, 6, 0),
+    interruptions: wachMin
+      ? [
+          {
+            start: new Date(2026, 8, tag + 1, 1, 0),
+            end: new Date(2026, 8, tag + 1, 1 + Math.floor(wachMin / 60), wachMin % 60)
+          }
+        ]
+      : []
+  });
+  const now = new Date(2026, 8, 24, 12, 0);
+
+  // Ohne Wachphasen: glatte 11 Stunden.
+  assert.equal(usualNightSleep([nacht(20), nacht(21), nacht(22)], now), 11 * 60);
+
+  // Mit einer unruhigen Nacht bleibt der Median bei 11 Stunden - so soll es
+  // sein, ein Ausreißer verschiebt die Gewohnheit nicht.
+  assert.equal(usualNightSleep([nacht(20), nacht(21), nacht(22, 120)], now), 11 * 60);
+
+  // Sind alle Nächte unruhig, sinkt der Wert entsprechend.
+  assert.equal(
+    usualNightSleep([nacht(20, 120), nacht(21, 120), nacht(22, 120)], now),
+    9 * 60
+  );
+});
+
+test('Zu wenige Nächte ergeben keine übliche Nacht', () => {
+  const now = new Date(2026, 8, 24, 12, 0);
+  assert.equal(usualNightSleep([], now), null);
+  assert.equal(
+    usualNightSleep(
+      [{ type: 'night', start: new Date(2026, 8, 22, 19, 0), end: new Date(2026, 8, 23, 6, 0) }],
+      now
+    ),
+    null
+  );
+});
+
+test('Unmögliche Nächte zählen nicht als Gewohnheit', () => {
+  const now = new Date(2026, 8, 24, 12, 0);
+  const echt = (tag) => ({
+    type: 'night',
+    start: new Date(2026, 8, tag, 19, 0),
+    end: new Date(2026, 8, tag + 1, 6, 0)
+  });
+  // Eine 20-Stunden-Nacht ist ein Fehleintrag, keine Gewohnheit.
+  const kaputt = { type: 'night', start: new Date(2026, 8, 21, 10, 0), end: new Date(2026, 8, 22, 6, 0) };
+  assert.equal(usualNightSleep([echt(20), echt(21), echt(22), kaputt], now), 11 * 60);
 });

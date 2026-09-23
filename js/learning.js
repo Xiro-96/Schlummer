@@ -856,3 +856,33 @@ export function napWindowEffect(sleeps, { days = 28, now = new Date(), minGruppe
   if (beste.unterschied < 30) return null;
   return { n: paare.length, r, ...beste, paare: sortiert };
 }
+
+/**
+ * Wie lange schläft dieses Kind nachts üblicherweise - wirklich geschlafen,
+ * nicht im Bett gelegen.
+ *
+ * Der Unterschied ist kein Detail: Der 24-Stunden-Bedarf zählt Nettoschlaf.
+ * Wer ihm die Zeit im Bett gegenüberstellt, rechnet die Wachphasen doppelt -
+ * für den Tag bleibt dann rechnerisch nichts übrig, und Weckempfehlung wie
+ * Nachtbilanz fallen still aus.
+ *
+ * @param {object[]} sleeps  Einträge mit Date-Objekten (ohne kranke Tage)
+ * @param {Date}     [now]
+ * @returns {number|null} Minuten, oder null bei zu wenig Nächten
+ */
+export function usualNightSleep(sleeps, now = new Date(), { days = 21, minNaechte = 3 } = {}) {
+  const von = new Date(now.getTime() - days * DAY);
+  const netto = [];
+  for (const s of sleeps) {
+    if (s.type !== 'night' || !s.end || s.start < von || s.start > now) continue;
+    const wach = (s.interruptions || []).reduce(
+      (summe, g) => summe + (g.end ? minutesBetween(g.start, g.end) : 0),
+      0
+    );
+    const minuten = minutesBetween(s.start, s.end) - wach;
+    // Offensichtliche Fehleinträge draußen lassen.
+    if (minuten >= 5 * 60 && minuten <= 15 * 60) netto.push(minuten);
+  }
+  if (netto.length < minNaechte) return null;
+  return Math.round(median(netto));
+}
