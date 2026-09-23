@@ -377,14 +377,61 @@ export function napsForDay(day = new Date()) {
  * gestartet (weil das Kind kurz wach war), darf 19:49 nicht plötzlich als
  * "aufgewacht am Morgen" gelten.
  */
-export function morningWakeFor(day = new Date()) {
+/** Das Fenster, in dem ein Nachtende als "heute aufgestanden" zählt. */
+function morgenFenster(day) {
   const from = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-  const morningStart = new Date(from.getTime() + 2 * 60 * 60 * 1000);
-  const morningEnd = new Date(from.getTime() + 12 * 60 * 60 * 1000);
+  return [
+    new Date(from.getTime() + 2 * 60 * 60 * 1000),
+    new Date(from.getTime() + 12 * 60 * 60 * 1000)
+  ];
+}
+
+/**
+ * Die Aufstehzeit, die diese Familie üblicherweise hat.
+ *
+ * Braucht es immer dann, wenn für einen Morgen keine Nacht erfasst ist -
+ * nach kranken Tagen zum Beispiel, an denen die App gar nicht mitschreibt.
+ * Die feste Zeit aus den Einstellungen steht dort meist noch so, wie sie
+ * beim Einrichten eingetragen wurde, und liegt Monate später daneben. Was
+ * das Kind wirklich tut, steht im Protokoll.
+ *
+ * Kranke Tage bleiben draußen: an ihnen wird zu anderen Zeiten aufgestanden.
+ *
+ * @returns {number|null} Minuten seit Mitternacht, oder null bei zu wenig Daten
+ */
+export function usualMorningMinutes(day = new Date(), { days = 21, minTage = 3 } = {}) {
+  const bis = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const von = new Date(bis.getTime() - days * DAY);
+  const zeiten = [];
+  for (const s of learningSleeps()) {
+    if (s.type !== 'night' || !s.end) continue;
+    if (s.end < von || s.end >= bis) continue;
+    const [fensterVon, fensterBis] = morgenFenster(s.end);
+    if (s.end < fensterVon || s.end >= fensterBis) continue;
+    zeiten.push(s.end.getHours() * 60 + s.end.getMinutes());
+  }
+  if (zeiten.length < minTage) return null;
+  zeiten.sort((a, b) => a - b);
+  const mitte = Math.floor(zeiten.length / 2);
+  return zeiten.length % 2
+    ? zeiten[mitte]
+    : Math.round((zeiten[mitte - 1] + zeiten[mitte]) / 2);
+}
+
+export function morningWakeFor(day = new Date()) {
+  const [morningStart, morningEnd] = morgenFenster(day);
   const night = allSleeps()
     .filter((s) => s.type === 'night' && s.end && s.end >= morningStart && s.end < morningEnd)
     .pop();
   if (night) return night.end;
+  // Keine Nacht erfasst: lieber die gelebte Gewohnheit als die Zahl, die
+  // beim Einrichten einmal eingetippt wurde.
+  const ueblich = usualMorningMinutes(day);
+  if (ueblich != null) {
+    const d = new Date(day);
+    d.setHours(Math.floor(ueblich / 60), ueblich % 60, 0, 0);
+    return d;
+  }
   return timeOnDay(day, load().settings.morningWake);
 }
 

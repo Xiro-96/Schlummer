@@ -84,3 +84,65 @@ test('Eine Datei ohne Krank-Feld lädt trotzdem', () => {
   assert.deepEqual(store.getState().sickDays, []);
   assert.equal(store.isSickDay(new Date()), false);
 });
+
+/* ------------------------------------------------ Übliche Aufstehzeit */
+
+const nacht = (tag, endStunde, endMinute = 0) => ({
+  id: `n${tag}`,
+  type: 'night',
+  start: new Date(2026, 8, tag - 1, 19, 0).toISOString(),
+  end: new Date(2026, 8, tag, endStunde, endMinute).toISOString()
+});
+
+function mitNaechten(sleeps, sickDays = []) {
+  store.importJSON(
+    JSON.stringify({
+      version: 1,
+      child: {},
+      settings: { morningWake: '05:50' },
+      sleeps,
+      events: [],
+      notes: [],
+      sickDays
+    })
+  );
+}
+
+test('Ohne erfasste Nacht zählt die gelebte Aufstehzeit, nicht die Einstellung', () => {
+  // Einstellung sagt 05:50, tatsächlich steht das Kind gegen 06:45 auf.
+  mitNaechten([nacht(14, 6, 40), nacht(15, 6, 50), nacht(16, 6, 45), nacht(17, 6, 45)]);
+
+  assert.equal(store.usualMorningMinutes(new Date(2026, 8, 20)), 6 * 60 + 45);
+  const morgen = store.morningWakeFor(new Date(2026, 8, 20, 9, 0));
+  assert.equal(morgen.getHours(), 6);
+  assert.equal(morgen.getMinutes(), 45);
+});
+
+test('Eine erfasste Nacht schlägt jede Schätzung', () => {
+  mitNaechten([nacht(14, 6, 40), nacht(15, 6, 50), nacht(16, 6, 45), nacht(17, 7, 20)]);
+
+  const morgen = store.morningWakeFor(new Date(2026, 8, 17, 9, 0));
+  assert.equal(morgen.getHours(), 7);
+  assert.equal(morgen.getMinutes(), 20);
+});
+
+test('Kranke Nächte verschieben die übliche Aufstehzeit nicht', () => {
+  // Am 16. und 17. krank und lange geschlafen - das darf nicht zählen.
+  // Die Nacht gehört zum Abend davor, also sind der 15. und 16. markiert.
+  mitNaechten(
+    [nacht(14, 6, 40), nacht(15, 6, 50), nacht(16, 9, 0), nacht(17, 9, 30)],
+    ['2026-09-15', '2026-09-16']
+  );
+
+  // Nur der 14. und 15. bleiben: 06:40 und 06:50 -> 06:45.
+  assert.equal(store.usualMorningMinutes(new Date(2026, 8, 20), { minTage: 2 }), 6 * 60 + 45);
+});
+
+test('Zu wenige Nächte: dann eben die Einstellung', () => {
+  mitNaechten([nacht(16, 6, 40)]);
+
+  assert.equal(store.usualMorningMinutes(new Date(2026, 8, 20)), null);
+  const morgen = store.morningWakeFor(new Date(2026, 8, 20, 9, 0));
+  assert.equal(morgen.getHours(), 5);
+  assert.equal(morgen.getMinutes(), 50);
+});

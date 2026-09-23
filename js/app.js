@@ -72,7 +72,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.1';
+export const APP_VERSION = '4.2';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -142,6 +142,13 @@ function context(now = new Date()) {
     ? learnProfile(store.learningSleeps(), baseBand, now)
     : { active: false, confidence: 0, samples: { windows: 0, naps: 0, days: 0, napDays: 0 }, values: {} };
   const morningWake = store.morningWakeFor(now);
+  // Ist für diesen Morgen wirklich eine Nacht erfasst, oder steht hier nur
+  // die übliche Zeit? Das gehört dazugesagt, wo die Zeit bearbeitet wird.
+  const morgenErfasst = store
+    .allSleeps()
+    .some(
+      (x) => x.type === 'night' && x.end && sameDay(x.end, now) && x.end.getHours() >= 2 && x.end.getHours() < 12
+    );
   const sleeps = store.sleepsForPlan(now);
   const running = store.runningSleep();
   const activeNaps =
@@ -361,6 +368,7 @@ function context(now = new Date()) {
     gewohnteBettzeit,
     fenstereffekt,
     krank,
+    morgenErfasst,
     festgefahren,
     minus,
     nachholen,
@@ -1769,6 +1777,13 @@ function viewPlan() {
         Aufgewacht am Morgen
         <input type="time" id="morning" value="${hhmm(morningWake)}" />
       </label>
+      ${
+        ctx.morgenErfasst
+          ? ''
+          : `<p class="hint">Für heute ist keine Nacht erfasst - das ist die Zeit, zu der
+              ${esc(store.getState().child.name || 'dein Kind')} sonst aufsteht. Stimmt sie
+              nicht, trag sie hier ein: der ganze Tagesplan hängt daran.</p>`
+      }
       <ul class="timeline">
         ${plan.blocks.map((b) => blockRow(b, now)).join('')}
       </ul>

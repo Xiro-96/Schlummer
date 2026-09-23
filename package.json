@@ -7,6 +7,10 @@
   "license": "MIT",
   "scripts": {
     "start": "python3 -m http.server 8080",
-    "test": "node --test"
+    "test": "node --test",
+    "check:browser": "node tools/browser-checks/run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
   }
 }
