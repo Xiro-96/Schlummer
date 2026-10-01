@@ -26,7 +26,10 @@ const DEFAULT_STATE = {
   notes: [],
   // Tage, an denen das Kind krank war (YYYY-MM-DD, Ortszeit). Sie bleiben im
   // Protokoll sichtbar, werden aber von allem ausgenommen, was lernt.
-  sickDays: []
+  sickDays: [],
+  // Von Hand gesetzte Aufstehzeiten für einzelne Tage, an denen keine Nacht
+  // erfasst ist: { '2026-10-01': '05:50' }.
+  morningOverrides: {}
 };
 
 let state = null;
@@ -47,6 +50,10 @@ export function load() {
     state.events = Array.isArray(state.events) ? state.events : [];
     state.notes = Array.isArray(state.notes) ? state.notes : [];
     state.sickDays = Array.isArray(state.sickDays) ? state.sickDays : [];
+    state.morningOverrides =
+      state.morningOverrides && typeof state.morningOverrides === 'object'
+        ? state.morningOverrides
+        : {};
   } catch (err) {
     console.warn('Gespeicherte Daten unlesbar, starte neu.', err);
     state = clone(DEFAULT_STATE);
@@ -418,14 +425,36 @@ export function usualMorningMinutes(day = new Date(), { days = 21, minTage = 3 }
     : Math.round((zeiten[mitte - 1] + zeiten[mitte]) / 2);
 }
 
+/**
+ * Von Hand gesetzte Aufstehzeit für einen Tag ohne erfasste Nacht.
+ * @returns {string|null} "HH:MM"
+ */
+export function morningOverrideFor(day = new Date()) {
+  return load().morningOverrides[dayKeyOf(day)] || null;
+}
+
+/** Aufstehzeit für einen Tag von Hand setzen. null entfernt die Angabe. */
+export function setMorningOverride(day, hhmm) {
+  const key = dayKeyOf(day);
+  if (hhmm) load().morningOverrides[key] = hhmm;
+  else delete load().morningOverrides[key];
+  save();
+}
+
 export function morningWakeFor(day = new Date()) {
   const [morningStart, morningEnd] = morgenFenster(day);
   const night = allSleeps()
     .filter((s) => s.type === 'night' && s.end && s.end >= morningStart && s.end < morningEnd)
     .pop();
+  // Eine erfasste Nacht ist die beste Auskunft: sie ist gemessen.
   if (night) return night.end;
-  // Keine Nacht erfasst: lieber die gelebte Gewohnheit als die Zahl, die
-  // beim Einrichten einmal eingetippt wurde.
+  // Danach, was für diesen Tag von Hand eingetragen wurde. Wer die Zeit
+  // ausdrücklich angibt, weiß es besser als jede Schätzung - sonst tippt
+  // man etwas ein und nichts passiert.
+  const gesetzt = morningOverrideFor(day);
+  if (gesetzt) return timeOnDay(day, gesetzt);
+  // Sonst die gelebte Gewohnheit statt der Zahl, die beim Einrichten einmal
+  // eingetippt wurde.
   const ueblich = usualMorningMinutes(day);
   if (ueblich != null) {
     const d = new Date(day);
@@ -556,6 +585,10 @@ export function importJSON(text) {
   state.events = Array.isArray(parsed.events) ? parsed.events : [];
   state.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
   state.sickDays = Array.isArray(parsed.sickDays) ? parsed.sickDays : [];
+  state.morningOverrides =
+    parsed.morningOverrides && typeof parsed.morningOverrides === 'object'
+      ? parsed.morningOverrides
+      : {};
   state.settings = { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) };
   state.child = { ...DEFAULT_STATE.child, ...(parsed.child || {}) };
   save();

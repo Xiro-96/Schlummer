@@ -146,3 +146,53 @@ test('Zu wenige Nächte: dann eben die Einstellung', () => {
   assert.equal(morgen.getHours(), 5);
   assert.equal(morgen.getMinutes(), 50);
 });
+
+/* ------------------------------------- Aufstehzeit von Hand setzen */
+
+test('Eine von Hand gesetzte Aufstehzeit schlägt die Schätzung', () => {
+  // Gewohnheit liegt bei 06:45, für den 20. ist nichts erfasst.
+  mitNaechten([nacht(14, 6, 40), nacht(15, 6, 50), nacht(16, 6, 45), nacht(17, 6, 45)]);
+  const tag = new Date(2026, 8, 20, 9, 0);
+  assert.equal(store.morningWakeFor(tag).getHours(), 6);
+
+  store.setMorningOverride(tag, '05:50');
+  const gesetzt = store.morningWakeFor(tag);
+  assert.equal(gesetzt.getHours(), 5);
+  assert.equal(gesetzt.getMinutes(), 50);
+  assert.equal(store.morningOverrideFor(tag), '05:50');
+
+  // Nur für diesen Tag - der Nachbartag bleibt bei der Gewohnheit.
+  assert.equal(store.morningWakeFor(new Date(2026, 8, 19, 9, 0)).getHours(), 6);
+
+  // Und sie lässt sich wieder entfernen.
+  store.setMorningOverride(tag, null);
+  assert.equal(store.morningOverrideFor(tag), null);
+  assert.equal(store.morningWakeFor(tag).getHours(), 6);
+});
+
+test('Eine erfasste Nacht schlägt auch die Handeingabe', () => {
+  mitNaechten([nacht(14, 6, 40), nacht(15, 6, 50), nacht(16, 6, 45), nacht(17, 7, 20)]);
+  const tag = new Date(2026, 8, 17, 9, 0);
+  store.setMorningOverride(tag, '05:50');
+  // Gemessen schlägt gesetzt: die Nacht endet um 07:20.
+  assert.equal(store.morningWakeFor(tag).getHours(), 7);
+  assert.equal(store.morningWakeFor(tag).getMinutes(), 20);
+});
+
+test('Gesetzte Aufstehzeiten wandern durch Export und Import', () => {
+  mitNaechten([]);
+  store.setMorningOverride(new Date(2026, 9, 1), '05:50');
+  const datei = store.exportJSON('4.4');
+  assert.match(datei, /"2026-10-01": ?"05:50"/);
+
+  mitNaechten([]);
+  assert.equal(store.morningOverrideFor(new Date(2026, 9, 1)), null);
+  store.importJSON(datei);
+  assert.equal(store.morningOverrideFor(new Date(2026, 9, 1)), '05:50');
+});
+
+test('Eine Datei ohne das Feld lädt weiterhin', () => {
+  store.importJSON(JSON.stringify({ version: 1, sleeps: [], settings: {}, child: {} }));
+  assert.deepEqual(store.getState().morningOverrides, {});
+  assert.equal(store.morningOverrideFor(new Date()), null);
+});

@@ -21,6 +21,8 @@ beendet sich mit Code 1.
 | --- | --- |
 | `morgen.mjs` | Aufstehzeit ohne erfasste Nacht: gelebte Gewohnheit statt Einstellung, kranke Tage draußen, Hinweis nur wenn geschätzt |
 | `haenger.mjs` | Eintrag ohne Ende wird erkannt und lässt sich in einem Tipp geradeziehen; Krank-Modus fragt nicht nach Schlafzeiten |
+| `budget.mjs` | Die übliche Nacht ist Nettoschlaf, nicht Zeit im Bett - sonst fällt die Weckempfehlung still aus |
+| `aufstehzeit.mjs` | Aufstehzeit von Hand setzen schlägt die Schätzung und überlebt den Neustart |
 
 ## Warum im Projekt und nicht daneben
 

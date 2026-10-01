@@ -73,7 +73,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.3';
+export const APP_VERSION = '4.4';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -145,11 +145,13 @@ function context(now = new Date()) {
   const morningWake = store.morningWakeFor(now);
   // Ist für diesen Morgen wirklich eine Nacht erfasst, oder steht hier nur
   // die übliche Zeit? Das gehört dazugesagt, wo die Zeit bearbeitet wird.
-  const morgenErfasst = store
-    .allSleeps()
-    .some(
-      (x) => x.type === 'night' && x.end && sameDay(x.end, now) && x.end.getHours() >= 2 && x.end.getHours() < 12
-    );
+  const morgenErfasst =
+    store
+      .allSleeps()
+      .some(
+        (x) =>
+          x.type === 'night' && x.end && sameDay(x.end, now) && x.end.getHours() >= 2 && x.end.getHours() < 12
+      ) || Boolean(store.morningOverrideFor(now));
   const sleeps = store.sleepsForPlan(now);
   const running = store.runningSleep();
   const activeNaps =
@@ -3366,9 +3368,9 @@ function openMorningDialog(day = new Date()) {
         if (wann <= nacht.start) return toast('Das Aufstehen liegt vor dem Einschlafen');
         store.updateSleep(nacht.id, { end: wann });
       } else {
-        store.update((s) => {
-          s.settings.morningWake = value;
-        });
+        // Für diesen Tag, nicht als Dauereinstellung: morgen kann es wieder
+        // anders sein, und die Einstellung ist nur der letzte Notnagel.
+        store.setMorningOverride(day, value);
       }
       render();
       toast(`Aufgestanden ${fmtTime(wann)}`);
@@ -3803,10 +3805,7 @@ document.addEventListener('change', (event) => {
       .filter((s) => s.type === 'night' && s.end && s.end.toDateString() === now.toDateString())
       .pop();
     if (night) store.updateSleep(night.id, { end: wake });
-    else
-      store.update((s) => {
-        s.settings.morningWake = el.value;
-      });
+    else store.setMorningOverride(now, el.value);
     render();
   }
   if (el.id === 'learning') {
