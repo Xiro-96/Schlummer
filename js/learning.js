@@ -794,12 +794,17 @@ function pearson(xs, ys) {
  * @param {object}   [opts]
  * @returns {null|{n:number, r:number, schwelle:number, kurz:object, lang:object, paare:Array}}
  */
-export function napWindowEffect(sleeps, { days = 28, now = new Date(), minGruppe = 4 } = {}) {
+export function napWindowEffect(sleeps, { days = 42, now = new Date(), minGruppe = 4 } = {}) {
   const from = new Date(now.getTime() - days * DAY);
   const naps = sleeps
     .filter((s) => s.type === 'nap' && s.end && s.start >= from && s.start <= now)
     .sort((a, b) => a.start - b.start);
-  const nights = sleeps.filter((s) => s.type === 'night' && s.end).sort((a, b) => a.start - b.start);
+  // Nur echte Nächte: ein versehentlich gestarteter 25-Minuten-Eintrag wäre
+  // sonst "die letzte Nacht" und machte aus dem Wachfenster des nächsten
+  // Tages einen Unsinnswert von zehn Stunden.
+  const nights = sleeps
+    .filter((s) => s.type === 'night' && s.end && minutesBetween(s.start, s.end) >= 4 * 60)
+    .sort((a, b) => a.start - b.start);
 
   const paare = [];
   const gesehen = new Set();
@@ -885,4 +890,57 @@ export function usualNightSleep(sleeps, now = new Date(), { days = 21, minNaecht
   }
   if (netto.length < minNaechte) return null;
   return Math.round(median(netto));
+}
+
+/**
+ * Wie viel Tagschlaf zu ihren ruhigen Nächten gehört.
+ *
+ * Der Zusammenhang, der in diesen Daten am deutlichsten steht: Je mehr am
+ * Tag geschlafen wird, desto häufiger liegt das Kind nachts wach. Die Zeit
+ * im Bett ist dabei fast dieselbe - es ist der Tagschlaf, der den Unterschied
+ * macht. Also wird nicht gegen einen Richtwert geplant, sondern gegen das,
+ * was an den eigenen durchgeschlafenen Nächten mittags tatsächlich auf der
+ * Uhr stand.
+ *
+ * Der Wert kommt nur zurück, wenn beides stimmt: genug ruhige Nächte, und
+ * ein echter Unterschied zu den unruhigen. Macht der Tagschlaf bei diesem
+ * Kind keinen Unterschied, soll die App auch nichts daran drehen.
+ *
+ * @param {object[]} sleeps Einträge mit Date-Objekten (ohne kranke Tage)
+ * @param {object}   [opts]
+ * @returns {null|{minutes:number, tage:number, gegen:number, gegenTage:number}}
+ */
+export function calmDayTarget(
+  sleeps,
+  { days = 35, now = new Date(), minNaechte = 4, wachGrenze = 20, minUnterschied = 15 } = {}
+) {
+  const von = new Date(now.getTime() - days * DAY);
+  const naps = sleeps.filter(
+    (s) => s.type === 'nap' && s.end && minutesBetween(s.start, s.end) >= MIN_NAP_MINUTES / 2
+  );
+  const ruhig = [];
+  const unruhig = [];
+  for (const nacht of sleeps) {
+    if (nacht.type !== 'night' || !nacht.end) continue;
+    if (nacht.start < von || nacht.start > now) continue;
+    const dauer = minutesBetween(nacht.start, nacht.end);
+    // Fehleinträge draußen lassen - eine "Nacht" von 25 Minuten ist ein Tippfehler.
+    if (dauer < 4 * 60 || dauer > 16 * 60) continue;
+    const wach = (nacht.interruptions || []).reduce(
+      (summe, g) => summe + (g.end ? minutesBetween(g.start, g.end) : 0),
+      0
+    );
+    const key = dayKey(nacht.start);
+    const tagschlaf = naps
+      .filter((n) => dayKey(n.start) === key)
+      .reduce((summe, n) => summe + minutesBetween(n.start, n.end), 0);
+    // Tage ganz ohne Nickerchen sagen nichts über die richtige Länge.
+    if (tagschlaf <= 0) continue;
+    (wach < wachGrenze ? ruhig : unruhig).push(tagschlaf);
+  }
+  if (ruhig.length < minNaechte || unruhig.length < minNaechte) return null;
+  const ziel = Math.round(median(ruhig));
+  const gegen = Math.round(median(unruhig));
+  if (gegen - ziel < minUnterschied) return null;
+  return { minutes: ziel, tage: ruhig.length, gegen, gegenTage: unruhig.length };
 }

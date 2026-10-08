@@ -35,6 +35,7 @@ import {
   expectedNapCount,
   napCountBoundary,
   napWindowEffect,
+  calmDayTarget,
   learnProfile,
   sleepNeed24h,
   usualNightSleep,
@@ -73,7 +74,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.4';
+export const APP_VERSION = '4.5';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -178,6 +179,25 @@ function context(now = new Date()) {
 
   let band = personalizedBand(baseBand, profile, tagesform);
   if (tagesform != null && tagesform !== band.naps) band = bandForNapCount(band, tagesform);
+
+  // Wie viel Tagschlaf gehört zu ihren ruhigen Nächten? Steht dazu etwas in
+  // den eigenen Daten, plant der Tag gegen diesen Wert und nicht gegen den
+  // Richtwert des Alters. Nach unten begrenzt, damit aus einer Zufallsfolge
+  // ruhiger Nächte kein Nickerchen von zwanzig Minuten wird.
+  const tagziel = store.getState().settings.learning
+    ? calmDayTarget(store.learningSleeps(), { now })
+    : null;
+  if (tagziel && band.naps > 0) {
+    const grenze = Math.max(
+      Math.round(baseBand.dayTimeSleepMin * 0.5),
+      Math.min(baseBand.dayTimeSleepMin, tagziel.minutes)
+    );
+    band = {
+      ...band,
+      dayTimeSleepMin: grenze,
+      napLengthMin: Math.round(grenze / band.naps)
+    };
+  }
 
   // Aufgelaufener Schlaf des Tages: kurze Nickerchen erhöhen den Schlafdruck
   // und ziehen die weiteren Zeiten nach vorn.
@@ -361,7 +381,8 @@ function context(now = new Date()) {
           nightMinutes: gewohnteNacht,
           sleptToday: sleptSoFar,
           napStart: running.start,
-          bonus: nachholen ? nachholen.nap : 0
+          bonus: nachholen ? nachholen.nap : 0,
+          maxDayCap: tagziel ? band.dayTimeSleepMin : null
         })
       : null;
 
@@ -371,6 +392,7 @@ function context(now = new Date()) {
     gewohnteNacht,
     gewohnteBettzeit,
     fenstereffekt,
+    tagziel,
     krank,
     morgenErfasst,
     festgefahren,
@@ -2130,6 +2152,48 @@ function trendKarte() {
  * Tagen gemessen. Für viele Familien ist das die eigentliche Antwort auf
  * "warum schläft sie mittags nur eine halbe Stunde".
  */
+function tagzielKarte(ctx) {
+  const z = ctx.tagziel;
+  if (!z) return '';
+  const name = esc(store.getState().child.name || 'dein Kind');
+  const unterschied = z.gegen - z.minutes;
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Wie viel Mittagsschlaf zu ruhigen Nächten gehört</h2>
+        <small class="muted">${z.tage + z.gegenTage} Nächte</small>
+      </div>
+      <p class="hint">
+        Verglichen werden die Nächte, in denen ${name} durchgeschlafen hat, mit denen, in
+        denen sie länger wach lag - und zwar nach dem Tagschlaf, der ihnen vorausging.
+      </p>
+      <ul class="list compare">
+        <li>
+          <span class="grow">Vor durchgeschlafenen Nächten</span>
+          <small class="muted">${z.tage} ${z.tage === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${fmtDuration(z.minutes)}</strong>
+        </li>
+        <li>
+          <span class="grow">Vor unruhigen Nächten</span>
+          <small class="muted">${z.gegenTage} ${z.gegenTage === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${fmtDuration(z.gegen)}</strong>
+        </li>
+      </ul>
+      <p class="hint budget">
+        <strong>${fmtDuration(unterschied)}</strong> mehr Mittagsschlaf, und die Nacht wird
+        unruhiger. Der Plan rechnet deshalb mit <strong>${fmtDuration(
+          ctx.band.dayTimeSleepMin
+        )}</strong> Tagschlaf und schlägt vor, sie danach zu wecken - nicht, um ihr Schlaf
+        wegzunehmen, sondern damit er in die Nacht fällt.
+      </p>
+      <p class="hint">
+        Zusammen mit der Schwelle darüber heißt das: lange genug wach machen, damit aus dem
+        Nickerchen mehr wird als ein Schlafzyklus - und dann wecken, bevor es der Nacht etwas
+        wegnimmt. Beobachtung an den eigenen Daten, kein Beweis.
+      </p>
+    </div>`;
+}
+
 function fensterKarte(ctx) {
   const e = ctx.fenstereffekt;
   if (!e) return '';
@@ -2387,6 +2451,8 @@ function viewStatistik() {
     ${bilanzKarte(context())}
 
     ${fensterKarte(context())}
+
+    ${tagzielKarte(context())}
 
     ${trendKarte()}
 

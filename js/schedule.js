@@ -742,17 +742,36 @@ export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake }) 
  * @param {Date}   o.napStart      Beginn des laufenden Nickerchens
  * @param {number} [o.minNap=45]   so kurz wird nie geweckt
  * @param {number} [o.bonus=0]     Nachholminuten nach einer kurzen Nacht
- * @returns {null|{at:Date, maxDay:number, nightNeed:number}}
+ * @param {number} [o.maxDayCap]    eigene Obergrenze für den Tagschlaf
+ * @returns {null|{at:Date, maxDay:number, nightNeed:number, ausZiel:boolean}}
  */
-export function napCap({ need24h, nightMinutes, sleptToday = 0, napStart, minNap = 45, bonus = 0 }) {
+export function napCap({
+  need24h,
+  nightMinutes,
+  sleptToday = 0,
+  napStart,
+  minNap = 45,
+  bonus = 0,
+  maxDayCap = null
+}) {
   if (!need24h || !nightMinutes || !napStart) return null;
+  const ausBudget = Math.round(need24h - nightMinutes);
+  // Hat dieses Kind an seinen ruhigen Nächten weniger Tagschlaf gehabt, als
+  // das Budget hergibt, gilt der kleinere Wert: die Rechnung sagt, was
+  // hineinpasst, die eigenen Nächte sagen, was gut geht.
+  const ausZiel = maxDayCap != null && Math.round(maxDayCap) < ausBudget;
   // War die letzte Nacht kurz, darf der Tag heute mehr bekommen: die
   // fehlenden Minuten sind schon weg, die holt die nächste Nacht nicht nach.
-  const maxDay = Math.round(need24h - nightMinutes + Math.max(0, bonus));
+  // Über das Budget geht das aber nie hinaus - sonst holt ein Nachholtag die
+  // nächste Nacht gleich wieder kaputt.
+  const zuschlag = Math.round(Math.max(0, bonus));
+  const maxDay = ausZiel
+    ? Math.min(Math.round(maxDayCap) + zuschlag, ausBudget)
+    : ausBudget + zuschlag;
   if (maxDay <= 0) return null;
   const rest = maxDay - sleptToday;
   if (rest < minNap) return null;
-  return { at: addMinutes(napStart, rest), maxDay, nightNeed: Math.round(nightMinutes) };
+  return { at: addMinutes(napStart, rest), maxDay, nightNeed: Math.round(nightMinutes), ausZiel };
 }
 
 /**

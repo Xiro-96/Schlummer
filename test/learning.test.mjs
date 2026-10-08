@@ -8,6 +8,7 @@ import {
   expectedNapCount,
   napCountBoundary,
   napWindowEffect,
+  calmDayTarget,
   usualNightSleep,
   learnProfile,
   napTransitionReport,
@@ -652,4 +653,86 @@ test('Unmögliche Nächte zählen nicht als Gewohnheit', () => {
   // Eine 20-Stunden-Nacht ist ein Fehleintrag, keine Gewohnheit.
   const kaputt = { type: 'night', start: new Date(2026, 8, 21, 10, 0), end: new Date(2026, 8, 22, 6, 0) };
   assert.equal(usualNightSleep([echt(20), echt(21), echt(22), kaputt], now), 11 * 60);
+});
+
+/* ---------------------------------------------- Tagschlaf und ruhige Nächte */
+
+// Ein Kind, bei dem viel Mittagsschlaf die Nacht kostet: an geraden Tagen
+// 80 Minuten und durchgeschlafen, an ungeraden 140 Minuten und zwei Stunden
+// wach. Die Zeit im Bett ist jedes Mal dieselbe.
+function tageMitTagschlaf({ tage = 14, kurz = 80, lang = 140, wachMin = 120 } = {}) {
+  const sleeps = [];
+  for (let tag = 1; tag <= tage; tag++) {
+    const viel = tag % 2 === 1;
+    const start = new Date(2024, 4, tag, 11, 0);
+    sleeps.push({
+      type: 'nap',
+      start,
+      end: new Date(start.getTime() + (viel ? lang : kurz) * 60000)
+    });
+    const bett = new Date(2024, 4, tag, 19, 0);
+    const wach = new Date(2024, 4, tag + 1, 1, 0);
+    sleeps.push({
+      type: 'night',
+      start: bett,
+      end: new Date(2024, 4, tag + 1, 6, 30),
+      interruptions: viel
+        ? [{ start: wach, end: new Date(wach.getTime() + wachMin * 60000) }]
+        : []
+    });
+  }
+  return sleeps;
+}
+
+test('Das Tagschlaf-Ziel kommt aus den durchgeschlafenen Nächten', () => {
+  const z = calmDayTarget(tageMitTagschlaf(), { now: new Date(2024, 4, 15, 9, 0) });
+
+  assert.equal(z.minutes, 80);
+  assert.equal(z.gegen, 140);
+  assert.equal(z.tage, 7);
+  assert.equal(z.gegenTage, 7);
+});
+
+test('Ohne Unterschied zwischen ruhigen und unruhigen Nächten kein Ziel', () => {
+  // Gleich viel Tagschlaf vor beiden Sorten Nacht: dann sagt er nichts.
+  const z = calmDayTarget(tageMitTagschlaf({ kurz: 110, lang: 110 }), {
+    now: new Date(2024, 4, 15, 9, 0)
+  });
+  assert.equal(z, null);
+});
+
+test('Ein Fehleintrag von 25 Minuten gilt nicht als Nacht', () => {
+  const sleeps = tageMitTagschlaf();
+  sleeps.push({
+    type: 'night',
+    start: new Date(2024, 4, 14, 0, 20),
+    end: new Date(2024, 4, 14, 0, 45),
+    interruptions: []
+  });
+  const z = calmDayTarget(sleeps, { now: new Date(2024, 4, 15, 9, 0) });
+  // Ohne den Filter zählte der Eintrag als ruhige Nacht mit 140 Min Tagschlaf
+  // und zöge das Ziel nach oben.
+  assert.equal(z.minutes, 80);
+  assert.equal(z.tage, 7);
+});
+
+test('Zu wenige Nächte ergeben kein Ziel', () => {
+  const z = calmDayTarget(tageMitTagschlaf({ tage: 6 }), { now: new Date(2024, 4, 7, 9, 0) });
+  assert.equal(z, null);
+});
+
+test('Tage ohne Nickerchen zählen beim Ziel nicht mit', () => {
+  const sleeps = tageMitTagschlaf();
+  // Vier ruhige Nächte nach Tagen ganz ohne Nickerchen - sie dürfen das Ziel
+  // nicht auf null ziehen.
+  for (let tag = 15; tag <= 18; tag++) {
+    sleeps.push({
+      type: 'night',
+      start: new Date(2024, 4, tag, 19, 0),
+      end: new Date(2024, 4, tag + 1, 6, 30),
+      interruptions: []
+    });
+  }
+  const z = calmDayTarget(sleeps, { now: new Date(2024, 4, 19, 9, 0) });
+  assert.equal(z.minutes, 80);
 });

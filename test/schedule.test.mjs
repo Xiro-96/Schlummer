@@ -783,6 +783,45 @@ test('Der Nickerchen-Deckel schützt die Nachtzeit', () => {
   assert.equal(napCap({ need24h: 767, nightMinutes: 670, sleptToday: 60, napStart: at(14, 0) }), null);
 });
 
+test('Das Tagschlaf-Ziel aus ruhigen Nächten deckelt die Weckempfehlung', () => {
+  // Budget gäbe 1:37 her, die ruhigen Nächte sprechen für 1:20.
+  const c = napCap({
+    need24h: 767,
+    nightMinutes: 670,
+    sleptToday: 0,
+    napStart: at(11, 15),
+    maxDayCap: 80
+  });
+  assert.equal(c.maxDay, 80);
+  assert.equal(c.ausZiel, true);
+  assert.equal(fmtTime(c.at), '12:35');
+
+  // Ein Ziel über dem Budget ändert nichts: die Nacht behält Vorrang.
+  const weit = napCap({
+    need24h: 767,
+    nightMinutes: 670,
+    sleptToday: 0,
+    napStart: at(11, 15),
+    maxDayCap: 150
+  });
+  assert.equal(weit.maxDay, 97);
+  assert.equal(weit.ausZiel, false);
+});
+
+test('Ein Minus aus der Nacht füllt das Ziel auf, aber nie über das Budget', () => {
+  const c = napCap({
+    need24h: 767,
+    nightMinutes: 670,
+    sleptToday: 0,
+    napStart: at(11, 15),
+    maxDayCap: 80,
+    bonus: 35
+  });
+  // 80 + 35 wären 1:55 - das Budget lässt nur 1:37 zu.
+  assert.equal(c.maxDay, 97);
+  assert.equal(c.ausZiel, true);
+});
+
 test('Ohne gelernten Bedarf gibt es keine Weckempfehlung', () => {
   assert.equal(
     napCap({ need24h: null, nightMinutes: 670, napStart: at(11, 0) }),
