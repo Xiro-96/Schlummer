@@ -90,6 +90,35 @@ const minuten = (() => {
 console.log('  geplantes Nickerchen:', minuten, 'Min');
 pruefe(minuten !== null && minuten <= 95, `das Nickerchen bleibt beim Ziel (ist ${minuten} Min)`);
 
+// Und jetzt der Unterschied, der leicht durcheinandergeht: der Bogen zeigt
+// eine Prognose ("wach etwa"), die Karte darunter eine Empfehlung. Die
+// Prognose muss sagen, wie lange das Kind wirklich schlaeft - sonst steht
+// da eine Zahl, die mit der Erfahrung der Eltern nicht zusammenpasst.
+await geh('heute');
+await page.tap('[data-action="start-nap"]');
+await page.waitForTimeout(400);
+const bogen = await page.evaluate(() => document.querySelector('.arc-center').innerText.replace(/\s+/g, ' '));
+console.log('  Bogen:', bogen);
+const prognose = bogen.match(/wach etwa (\d{2}):(\d{2})/);
+pruefe(Boolean(prognose), 'der Bogen nennt eine Prognose');
+if (prognose) {
+  // Start war 08:00. Die gelernte Laenge liegt zwischen den 1:20 der ruhigen
+  // und den 2:20 der unruhigen Tage - das Ziel von 80 Minuten darf es nicht
+  // sein, sonst ist aus der Prognose eine Empfehlung geworden.
+  const minuten = Number(prognose[1]) * 60 + Number(prognose[2]) - 8 * 60;
+  console.log('  Prognose:', minuten, 'Min nach dem Einschlafen');
+  pruefe(minuten > 85, `die Prognose ist die gelernte Laenge, nicht das Ziel (ist ${minuten} Min)`);
+}
+const heuteText = await page.evaluate(() => document.body.innerText);
+const empfehlung = heuteText.match(/(?:bis|wäre) (\d{2}):(\d{2})/);
+pruefe(Boolean(empfehlung), 'es gibt eine Weckempfehlung');
+if (empfehlung && prognose) {
+  const e = Number(empfehlung[1]) * 60 + Number(empfehlung[2]);
+  const p = Number(prognose[1]) * 60 + Number(prognose[2]);
+  console.log('  Weckempfehlung:', empfehlung[0], '| Prognose:', prognose[0]);
+  pruefe(e < p, 'die Empfehlung liegt vor der Prognose');
+}
+
 await page.screenshot({ path: join(BILDER, 'shot-tagziel.png'), fullPage: true });
 await browser.close();
 console.log(fehler ? `\n${fehler} Abweichung(en)` : '\nAlles wie erwartet');

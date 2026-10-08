@@ -74,7 +74,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.5';
+export const APP_VERSION = '4.6';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -192,11 +192,11 @@ function context(now = new Date()) {
       Math.round(baseBand.dayTimeSleepMin * 0.5),
       Math.min(baseBand.dayTimeSleepMin, tagziel.minutes)
     );
-    band = {
-      ...band,
-      dayTimeSleepMin: grenze,
-      napLengthMin: Math.round(grenze / band.naps)
-    };
+    // Nur das Budget, nicht napLengthMin: Das Ziel sagt, wie lange das
+    // Nickerchen dauern *soll*. Wie lange sie tatsächlich schläft, steht in
+    // napLengthMin - daran hängt die Prognose im Bogen ("wach etwa ..."),
+    // und die darf keine Empfehlung sein.
+    band = { ...band, dayTimeSleepMin: grenze };
   }
 
   // Aufgelaufener Schlaf des Tages: kurze Nickerchen erhöhen den Schlafdruck
@@ -371,7 +371,15 @@ function context(now = new Date()) {
     band.nightSleepMin;
   // Was die letzte Nacht gekostet hat - und wie der Tag es hereinholt.
   const minus = lastNight && lastNight.end ? nightDebt(lastNight, gewohnteNacht, now) : null;
-  const nachholen = minus ? catchUpFor(minus.debt, laengsteLage) : null;
+  let nachholen = minus ? catchUpFor(minus.debt, laengsteLage) : null;
+  // Bei diesem Kind kostet mehr Tagschlaf die nächste Nacht. Ein kleines
+  // Minus mittags nachzuholen, tauscht also eine kurze Nacht gegen die
+  // nächste - das lohnt nicht. Ein großes Minus darf das Ziel um höchstens
+  // eine halbe Stunde überschreiten.
+  if (nachholen && tagziel) {
+    const nap = minus.debt >= 60 ? Math.min(nachholen.nap, 30) : 0;
+    nachholen = { ...nachholen, nap, amZiel: nap !== nachholen.nap };
+  }
   // An kranken Tagen kein Weckvorschlag: Schlaf ist dann das Wichtigste,
   // und die Nacht wird ohnehin nicht nach Plan verlaufen.
   const deckel =
@@ -1243,8 +1251,14 @@ function lastNightCard(ctx) {
               nach - der Tag muss das übernehmen:
              </p>
              <ul class="list compare">
-               <li><span class="grow">Nickerchen darf länger</span>
-                 <strong>+ ${fmtDuration(nachholen.nap)}</strong></li>
+               <li><span class="grow">${
+                 nachholen.amZiel && !nachholen.nap
+                   ? 'Nickerchen bleibt beim Ziel'
+                   : 'Nickerchen darf länger'
+               }</span>
+                 <strong>${
+                   nachholen.nap ? `+ ${fmtDuration(nachholen.nap)}` : 'wie geplant'
+                 }</strong></li>
                <li><span class="grow">Bettzeit heute</span>
                  <strong>${(() => {
                    // Nicht die Absicht anzeigen, sondern das Ergebnis: der
