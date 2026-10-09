@@ -332,7 +332,15 @@ export function rateSleep(id, { settle, mood, wakings }) {
 }
 
 /** @returns {string} id des neuen Eintrags */
-export function addSleep({ start, end, type = 'nap', note = '', settle = null, mood = null }) {
+export function addSleep({
+  start,
+  end,
+  type = 'nap',
+  note = '',
+  settle = null,
+  mood = null,
+  unterwegs = false
+}) {
   const id = `s${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
   update((s) => {
     s.sleeps.push({
@@ -343,6 +351,7 @@ export function addSleep({ start, end, type = 'nap', note = '', settle = null, m
       note,
       settle,
       mood,
+      unterwegs,
       wakings: null,
       interruptions: []
     });
@@ -360,6 +369,7 @@ export function updateSleep(id, patch) {
     if ('settle' in patch) entry.settle = patch.settle;
     if ('mood' in patch) entry.mood = patch.mood;
     if ('wakings' in patch) entry.wakings = patch.wakings;
+    if ('unterwegs' in patch) entry.unterwegs = Boolean(patch.unterwegs);
     if (patch.type) entry.type = patch.type;
   });
 }

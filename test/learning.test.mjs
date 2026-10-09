@@ -736,3 +736,79 @@ test('Tage ohne Nickerchen zählen beim Ziel nicht mit', () => {
   const z = calmDayTarget(sleeps, { now: new Date(2024, 4, 19, 9, 0) });
   assert.equal(z.minutes, 80);
 });
+
+/* ------------------------------------------- Unterwegs eingeschlafen */
+
+test('Ein Nickerchen unterwegs prägt weder Länge noch Wachfenster', () => {
+  // Zehn Tage: nach 5 Std Wachzeit hingelegt, 110 Min geschlafen.
+  const bauen = (unterwegsTage = []) => {
+    const sleeps = [];
+    for (let tag = 1; tag <= 10; tag++) {
+      sleeps.push({
+        type: 'night',
+        start: new Date(2024, 4, tag - 1, 19, 0),
+        end: new Date(2024, 4, tag, 7, 0),
+        interruptions: []
+      });
+      const unterwegs = unterwegsTage.includes(tag);
+      // Die Autofahrten: früh los und nach einem Zyklus vorbei.
+      const start = new Date(2024, 4, tag, unterwegs ? 9 : 12, 0);
+      sleeps.push({
+        type: 'nap',
+        start,
+        end: new Date(start.getTime() + (unterwegs ? 25 : 110) * 60000),
+        settle: 'fast',
+        mood: 'happy',
+        unterwegs,
+        interruptions: []
+      });
+    }
+    return sleeps;
+  };
+  const now = new Date(2024, 4, 11, 9, 0);
+  const band = bandForAge(480);
+
+  const sauber = learnProfile(bauen(), band, now);
+  const mitAuto = learnProfile(bauen([3, 6, 9]), band, now);
+  // Ohne die Markierung zögen die drei kurzen Fahrten den gelernten Wert nach
+  // unten - mit ihr bleibt er, wo er hingehört.
+  const wert = (v) => (v && typeof v === 'object' ? v.value : v);
+  assert.ok(
+    Math.abs(wert(sauber.values.napLength) - wert(mitAuto.values.napLength)) <= 5,
+    `napLength ${wert(sauber.values.napLength)} gegen ${wert(mitAuto.values.napLength)}`
+  );
+  assert.ok(
+    Math.abs(wert(sauber.values.firstWindow) - wert(mitAuto.values.firstWindow)) <= 5,
+    `firstWindow ${wert(sauber.values.firstWindow)} gegen ${wert(mitAuto.values.firstWindow)}`
+  );
+
+  // Dasselbe für die Schwelle: die Fahrten sind keine Belege.
+  const ohne = napWindowEffect(bauen([3, 6, 9]), { now, minGruppe: 2 });
+  assert.equal(ohne, null, 'ohne die Autofahrten bleibt kein Unterschied übrig');
+});
+
+test('Markiert man es nicht, verzerrt die Autofahrt das Gelernte', () => {
+  // Gegenprobe: dieselben Tage, nur ohne die Markierung.
+  const sleeps = [];
+  for (let tag = 1; tag <= 10; tag++) {
+    sleeps.push({
+      type: 'night',
+      start: new Date(2024, 4, tag - 1, 19, 0),
+      end: new Date(2024, 4, tag, 7, 0),
+      interruptions: []
+    });
+    const auto = [3, 6, 9].includes(tag);
+    const start = new Date(2024, 4, tag, auto ? 9 : 12, 0);
+    sleeps.push({
+      type: 'nap',
+      start,
+      end: new Date(start.getTime() + (auto ? 25 : 110) * 60000),
+      settle: 'fast',
+      mood: 'happy',
+      interruptions: []
+    });
+  }
+  const e = napWindowEffect(sleeps, { now: new Date(2024, 4, 11, 9, 0), minGruppe: 2 });
+  assert.ok(e, 'ohne Markierung liest die App einen Zusammenhang heraus');
+  assert.equal(e.kurz.median, 25);
+});

@@ -193,7 +193,8 @@ export function buildPlan({
       // Die id wandert mit, damit der Block im Plan bearbeitet werden kann.
       id: nap.id,
       index: ++windowIndex,
-      note: nap.note || ''
+      note: nap.note || '',
+      unterwegs: Boolean(nap.unterwegs)
     });
     cursor = nap.end;
   }

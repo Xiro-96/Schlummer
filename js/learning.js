@@ -170,10 +170,16 @@ export function collectSamples(sleeps, now = new Date()) {
       const minutes = minutesBetween(nap.start, nap.end);
       const quality = napQuality(nap, minutes);
       const qualityWeight = weight * QUALITY_WEIGHT[quality];
-      napLengths.push({ value: minutes, weight: qualityWeight });
-      form.napLengths.push({ value: minutes, weight: qualityWeight });
+      // Unterwegs eingeschlafen und beim Anhalten wieder wach: Weder die
+      // Länge noch das Wachfenster davor sagen etwas über dieses Kind. Der
+      // Schlaf zählt trotzdem - für das Budget des Tages, nur nicht als
+      // Vorbild für den Plan.
+      if (!nap.unterwegs) {
+        napLengths.push({ value: minutes, weight: qualityWeight });
+        form.napLengths.push({ value: minutes, weight: qualityWeight });
+      }
 
-      if (previousEnd) {
+      if (previousEnd && !nap.unterwegs) {
         const window = minutesBetween(previousEnd, nap.start);
         // Nur plausible Wachfenster vor einem echten Nickerchen lernen.
         if (window >= 15 && window <= 8 * 60) {
@@ -814,6 +820,10 @@ export function napWindowEffect(sleeps, { days = 42, now = new Date(), minGruppe
     // Nacht davor und damit über die Tage vergleichbar.
     if (gesehen.has(key)) continue;
     gesehen.add(key);
+    // Das erste Nickerchen unterwegs: Wann es begann, entschied die Fahrt,
+    // nicht die Müdigkeit - und wann es endete, das Ankommen. Der Tag sagt
+    // über den Zusammenhang nichts aus.
+    if (nap.unterwegs) continue;
     let letzteNacht = null;
     for (const n of nights) {
       if (n.end <= nap.start) letzteNacht = n;

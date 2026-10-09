@@ -74,7 +74,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.7';
+export const APP_VERSION = '4.8';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -502,7 +502,7 @@ function blockAction(block) {
 function blockRow(block, now) {
   const label =
     block.type === 'nap'
-      ? `Nickerchen ${block.index || ''}`.trim()
+      ? `${block.unterwegs ? '🚗 ' : ''}Nickerchen ${block.index || ''}`.trim()
       : block.type === 'night'
         ? block.continuation || block.continued
           ? 'Nacht geht weiter'
@@ -3094,6 +3094,14 @@ function openSleepDialog(id, defaults = null) {
           <button type="button" class="chip" data-action="shift-time" data-field="d-end" data-now="1">jetzt</button>
         </div>
       </div>
+      <label class="check" id="d-unterwegs-block">
+        <input type="checkbox" id="d-unterwegs" ${entry && entry.unterwegs ? 'checked' : ''} />
+        <span>🚗 Unterwegs eingeschlafen (Auto, Kinderwagen)</span>
+      </label>
+      <p class="hint">
+        Dann entscheidet die Fahrt, wann der Schlaf beginnt und endet. Er zählt als Tagschlaf,
+        aber die App lernt daraus keine Nickerchenlänge und kein Wachfenster.
+      </p>
       <p class="hint" id="d-duration"></p>
       <div class="row" style="justify-content:flex-end">
         ${entry ? '<button class="danger" value="delete">Löschen</button>' : ''}
@@ -3104,6 +3112,13 @@ function openSleepDialog(id, defaults = null) {
     </form>`;
   dialog.returnValue = '';
   dialog.showModal();
+  // Der Schalter gehört zum Nickerchen, nicht zur Nacht.
+  const typeBox = dialog.querySelector('#d-type');
+  const syncType = () => {
+    dialog.querySelector('#d-unterwegs-block').hidden = typeBox.value === 'night';
+  };
+  typeBox.addEventListener('change', syncType);
+  syncType();
   const runningBox = dialog.querySelector('#d-running');
   const syncRunning = () => {
     const on = runningBox.checked;
@@ -3148,11 +3163,12 @@ function openSleepDialog(id, defaults = null) {
         return;
       }
       // Ein laufender Schlaf ist einmalig: ein anderer wird dabei beendet.
+      const unterwegs = type === 'nap' && dialog.querySelector('#d-unterwegs').checked;
       if (entry) {
-        store.updateSleep(entry.id, { start: startVal, end: endVal, type });
+        store.updateSleep(entry.id, { start: startVal, end: endVal, type, unterwegs });
         if (laeuft) store.resumeSleep(entry.id);
       } else {
-        const id = store.addSleep({ start: startVal, end: endVal, type });
+        const id = store.addSleep({ start: startVal, end: endVal, type, unterwegs });
         if (laeuft) store.resumeSleep(id);
       }
       // Ohne dieses render() bliebe der Plan auf dem alten Stand stehen.
