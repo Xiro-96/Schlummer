@@ -873,9 +873,14 @@ export function napWindowEffect(sleeps, { days = 42, now = new Date(), minGruppe
  *
  * @param {object[]} sleeps  Einträge mit Date-Objekten (ohne kranke Tage)
  * @param {Date}     [now]
+ * @param {object}   [opts]   anteil: 0.5 ist der Median, 0.9 die langen Nächte
  * @returns {number|null} Minuten, oder null bei zu wenig Nächten
  */
-export function usualNightSleep(sleeps, now = new Date(), { days = 21, minNaechte = 3 } = {}) {
+export function usualNightSleep(
+  sleeps,
+  now = new Date(),
+  { days = 21, minNaechte = 3, anteil = 0.5 } = {}
+) {
   const von = new Date(now.getTime() - days * DAY);
   const netto = [];
   for (const s of sleeps) {
@@ -889,7 +894,9 @@ export function usualNightSleep(sleeps, now = new Date(), { days = 21, minNaecht
     if (minuten >= 5 * 60 && minuten <= 15 * 60) netto.push(minuten);
   }
   if (netto.length < minNaechte) return null;
-  return Math.round(median(netto));
+  if (anteil === 0.5) return Math.round(median(netto));
+  netto.sort((a, b) => a - b);
+  return Math.round(netto[Math.min(netto.length - 1, Math.floor(anteil * (netto.length - 1)))]);
 }
 
 /**
@@ -912,7 +919,7 @@ export function usualNightSleep(sleeps, now = new Date(), { days = 21, minNaecht
  */
 export function calmDayTarget(
   sleeps,
-  { days = 35, now = new Date(), minNaechte = 4, wachGrenze = 20, minUnterschied = 15 } = {}
+  { days = 35, now = new Date(), minNaechte = 4, wachGrenze = 30, minUnterschied = 15 } = {}
 ) {
   const von = new Date(now.getTime() - days * DAY);
   const naps = sleeps.filter(
@@ -920,6 +927,9 @@ export function calmDayTarget(
   );
   const ruhig = [];
   const unruhig = [];
+  // Kurz stirren ist keine unruhige Nacht - gemeint sind die Phasen, in denen
+  // wirklich jemand aufstehen muss. Eine zu scharfe Grenze laesst das Ziel
+  // ausserdem von Tag zu Tag hin- und herspringen.
   for (const nacht of sleeps) {
     if (nacht.type !== 'night' || !nacht.end) continue;
     if (nacht.start < von || nacht.start > now) continue;

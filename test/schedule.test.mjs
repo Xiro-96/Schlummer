@@ -783,6 +783,26 @@ test('Der Nickerchen-Deckel schützt die Nachtzeit', () => {
   assert.equal(napCap({ need24h: 767, nightMinutes: 670, sleptToday: 60, napStart: at(14, 0) }), null);
 });
 
+test('Die Bettzeit aus dem Budget verlangt keine Nacht, die es nie gab', () => {
+  const morgen = at(6, 40);
+  // Ein Tag mit fast keinem Nickerchen: die reine Rechnung will 12:23 Nacht.
+  const ohne = bedtimeFromBudget({ need24h: 767, dayMinutes: 24, morningWake: morgen });
+  assert.equal(fmtTime(ohne), '17:57');
+  // Dieses Kind schläft nachts höchstens 11:45 - mehr wird nicht eingeplant.
+  const mit = bedtimeFromBudget({
+    need24h: 767,
+    dayMinutes: 24,
+    morningWake: morgen,
+    nightMax: 705
+  });
+  assert.equal(fmtTime(mit), '18:35');
+  // Liegt der Bedarf unter der Grenze, ändert sie nichts.
+  assert.equal(
+    fmtTime(bedtimeFromBudget({ need24h: 767, dayMinutes: 98, morningWake: morgen, nightMax: 705 })),
+    '19:11'
+  );
+});
+
 test('Das Tagschlaf-Ziel aus ruhigen Nächten deckelt die Weckempfehlung', () => {
   // Budget gäbe 1:37 her, die ruhigen Nächte sprechen für 1:20.
   const c = napCap({

@@ -789,11 +789,24 @@ export function napCap({
  * @param {number} o.dayMinutes   Tagschlaf dieses Tages (geplant und erfasst)
  * @param {Date}   o.morningWake  gewohnte Aufstehzeit (an ihrem Tag)
  * @param {number} [o.settleMin=20] Zuschlag fürs Einschlafen
+ * @param {number} [o.nightMax]     so lange schläft dieses Kind nachts höchstens
  * @returns {null|Date}
  */
-export function bedtimeFromBudget({ need24h, dayMinutes = 0, morningWake, settleMin = 20 }) {
+export function bedtimeFromBudget({
+  need24h,
+  dayMinutes = 0,
+  morningWake,
+  settleMin = 20,
+  nightMax = null
+}) {
   if (!need24h || !morningWake) return null;
-  const nightNeed = Math.max(0, need24h - dayMinutes);
+  // Was am Tag fehlt, holt die Nacht nicht beliebig nach. An einem Tag fast
+  // ohne Nickerchen verlangt die reine Rechnung sonst eine Nacht, wie dieses
+  // Kind sie noch nie hatte - und die Bettzeit rutscht auf halb sechs. Länger
+  // als seine längsten Nächte planen wir nicht; der Rest des Minus bleibt
+  // offen, statt als Wachliegen im Bett zu landen.
+  let nightNeed = Math.max(0, need24h - dayMinutes);
+  if (nightMax && nightNeed > nightMax) nightNeed = Math.round(nightMax);
   const ziel = addMinutes(morningWake, 24 * 60);
   return addMinutes(ziel, -(nightNeed + settleMin));
 }

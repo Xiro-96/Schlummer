@@ -74,7 +74,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.6';
+export const APP_VERSION = '4.7';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -163,6 +163,14 @@ function context(now = new Date()) {
     .filter((s) => s.type !== 'night')
     .sort((a, b) => a.start - b.start);
 
+  // Wie viel Tagschlaf gehört zu ihren ruhigen Nächten? Steht dazu etwas in
+  // den eigenen Daten, plant der Tag gegen diesen Wert und nicht gegen den
+  // Richtwert des Alters.
+  const tagziel = store.getState().settings.learning
+    ? calmDayTarget(store.learningSleeps(), { now })
+    : null;
+  const sollTagschlaf = tagziel ? tagziel.minutes : baseBand.dayTimeSleepMin;
+
   // Welche Form hat dieser Tag? Feste Vorgabe der Eltern schlägt alles. Sonst
   // verrät der Beginn des ersten Nickerchens die Form: früh los heißt meist,
   // dass noch eines folgt, spät los, dass eines reicht. Und mehr Nickerchen,
@@ -177,20 +185,39 @@ function context(now = new Date()) {
   if (tagesform != null && tagesform < napsToday) tagesform = napsToday;
   if (tagesform == null && napsToday > baseBand.naps) tagesform = napsToday;
 
+  // Was der Tag bisher an Schlaf gebracht hat - für die Frage, ob er noch
+  // eines braucht.
+  const tagSchlafBisher = tagesNaps
+    .filter((s) => s.end)
+    .reduce((summe, s) => summe + minutesBetween(s.start, s.end), 0);
+  // Ein Nickerchen, das nach einem Schlafzyklus endete, war nicht der
+  // Mittagsschlaf dieses Tages. Fehlt danach noch eine Dreiviertelstunde,
+  // ist das ein Tag mit einem Nickerchen mehr - sonst plant die App sieben
+  // Stunden Wachzeit bis zum Abend, und die schafft kein Kind.
+  // Ohne erkannte Tagesform gilt die des Altersbands - sonst greift die
+  // Regel ausgerechnet an den Tagen nicht, an denen nichts erkannt wurde.
+  const formBisher = tagesform != null ? tagesform : baseBand.naps;
+  const nochEines =
+    !running &&
+    napsToday > 0 &&
+    formBisher <= napsToday &&
+    sollTagschlaf - tagSchlafBisher >= 45;
+  if (nochEines) tagesform = napsToday + 1;
+
   let band = personalizedBand(baseBand, profile, tagesform);
   if (tagesform != null && tagesform !== band.naps) band = bandForNapCount(band, tagesform);
 
-  // Wie viel Tagschlaf gehört zu ihren ruhigen Nächten? Steht dazu etwas in
-  // den eigenen Daten, plant der Tag gegen diesen Wert und nicht gegen den
-  // Richtwert des Alters. Nach unten begrenzt, damit aus einer Zufallsfolge
-  // ruhiger Nächte kein Nickerchen von zwanzig Minuten wird.
-  const tagziel = store.getState().settings.learning
-    ? calmDayTarget(store.learningSleeps(), { now })
-    : null;
-  if (tagziel && band.naps > 0) {
+  // Das Budget des Tages: das gelernte Ziel, sonst der Richtwert des Alters.
+  // Es hängt am Tag, nicht an der Zahl der Nickerchen - wird aus einem Tag mit
+  // einem Nickerchen einer mit zweien, teilt sich dieselbe Menge Schlaf auf
+  // zwei Nickerchen auf, sie verdoppelt sich nicht. Nach unten begrenzt, damit
+  // aus einer Zufallsfolge ruhiger Nächte kein Nickerchen von zwanzig Minuten
+  // wird.
+  const budgetZiel = tagziel ? tagziel.minutes : nochEines ? baseBand.dayTimeSleepMin : null;
+  if (budgetZiel != null && band.naps > 0) {
     const grenze = Math.max(
       Math.round(baseBand.dayTimeSleepMin * 0.5),
-      Math.min(baseBand.dayTimeSleepMin, tagziel.minutes)
+      Math.min(baseBand.dayTimeSleepMin, budgetZiel)
     );
     // Nur das Budget, nicht napLengthMin: Das Ziel sagt, wie lange das
     // Nickerchen dauern *soll*. Wie lange sie tatsächlich schläft, steht in
@@ -223,6 +250,10 @@ function context(now = new Date()) {
   const randphase = laengsteLage === 'frueh' || laengsteLage === 'spaet';
   // Der eigene 24-Stunden-Bedarf: Tag- und Nachtschlaf laufen gegeneinander.
   const need = store.getState().settings.learning ? sleepNeed24h(store.learningSleeps(), now) : null;
+  // Wie lang werden ihre langen Nächte? Mehr plant das Budget nicht ein.
+  const langeNacht = store.getState().settings.learning
+    ? usualNightSleep(store.learningSleeps(), now, { anteil: 0.9 })
+    : null;
   const gewohntesAufstehen =
     profile.active && profile.values.morning != null
       ? timeOnDay(morningWake, toClock(profile.values.morning))
@@ -266,7 +297,8 @@ function context(now = new Date()) {
     const ausBudget = bedtimeFromBudget({
       need24h: need.minutes,
       dayMinutes: tagschlaf,
-      morningWake: gewohntesAufstehen
+      morningWake: gewohntesAufstehen,
+      nightMax: langeNacht
     });
     if (ausBudget && (!planArgs.bedtimeNotBefore || ausBudget > planArgs.bedtimeNotBefore)) {
       plan = buildPlan({ ...planArgs, bedtimeNotBefore: ausBudget });
