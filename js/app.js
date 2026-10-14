@@ -36,6 +36,7 @@ import {
   napCountBoundary,
   napWindowEffect,
   calmDayTarget,
+  sleepOfferLimit,
   learnProfile,
   sleepNeed24h,
   usualNightSleep,
@@ -74,7 +75,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.8';
+export const APP_VERSION = '4.9';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -304,6 +305,44 @@ function context(now = new Date()) {
       plan = buildPlan({ ...planArgs, bedtimeNotBefore: ausBudget });
     }
   }
+  // Das Schlafangebot dieses Tages: Zeit im Bett plus Tagschlaf. Das ist,
+  // was die Eltern in der Hand haben - der Schlaf selbst nicht. Über ihrer
+  // Grenze wird aus dem Mehrangebot kein Schlaf, sondern Wachliegen mitten
+  // in der Nacht. Also wird der Abend notfalls nach hinten geschoben.
+  const angebotsGrenze = store.getState().settings.learning
+    ? sleepOfferLimit(store.learningSleeps(), { now })
+    : null;
+  const angebotVon = (p) => {
+    const nacht = [...p.blocks].reverse().find((b) => b.type === 'night');
+    if (!nacht || !p.bedtime) return null;
+    const tagschlaf = p.blocks
+      .filter((b) => b.type === 'nap')
+      .reduce((sum, b) => sum + minutesBetween(b.start, b.end), 0);
+    const imBett = minutesBetween(p.bedtime, nacht.end);
+    if (imBett <= 0) return null;
+    return { minutes: imBett + tagschlaf, imBett, tagschlaf, nachtEnde: nacht.end };
+  };
+  let angebot = angebotVon(plan);
+  // Nur solange der Abend noch geplant ist - eine laufende Nacht verschiebt
+  // niemand mehr.
+  const abendOffen = !activeNaps.some((s) => s.type === 'night' && (!s.end || s.start >= morningWake));
+  if (angebot && angebotsGrenze && abendOffen && angebot.minutes > angebotsGrenze.minutes) {
+    const spaeter = addMinutes(
+      angebot.nachtEnde,
+      -(angebotsGrenze.minutes - angebot.tagschlaf)
+    );
+    if (spaeter > plan.bedtime) {
+      const enger = buildPlan({ ...planArgs, bedtimeNotBefore: spaeter });
+      const neu = angebotVon(enger);
+      // Nur übernehmen, wenn es das Angebot wirklich kleiner macht - die
+      // Altersobergrenze für die Bettzeit bleibt unangetastet.
+      if (neu && neu.minutes < angebot.minutes) {
+        plan = enger;
+        angebot = neu;
+      }
+    }
+  }
+
   const status = wakeStatus({
     band,
     lastWakeUp: store.lastWakeUp(now),
@@ -433,6 +472,8 @@ function context(now = new Date()) {
     gewohnteBettzeit,
     fenstereffekt,
     tagziel,
+    angebot,
+    angebotsGrenze,
     krank,
     morgenErfasst,
     festgefahren,
@@ -2198,6 +2239,66 @@ function trendKarte() {
  * Tagen gemessen. Für viele Familien ist das die eigentliche Antwort auf
  * "warum schläft sie mittags nur eine halbe Stunde".
  */
+function angebotKarte(ctx) {
+  const g = ctx.angebotsGrenze;
+  if (!g) return '';
+  const a = ctx.angebot;
+  const name = esc(store.getState().child.name || 'dein Kind');
+  const anteil = (teil) => (teil.tage ? Math.round((100 * teil.lang) / teil.tage) : 0);
+  const drueber = a && a.minutes > g.minutes;
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Wie viel Schlaf du heute anbietest</h2>
+        <small class="muted">${g.tage} Nächte</small>
+      </div>
+      <p class="hint">
+        Das Angebot ist das, was in deiner Hand liegt: Zeit im Bett plus Tagschlaf. Wie viel
+        ${name} davon wirklich schläft, nicht. Über einer bestimmten Grenze wird aus mehr
+        Angebot kein Schlaf mehr, sondern Wachliegen mitten in der Nacht.
+      </p>
+      ${
+        a
+          ? `<ul class="list compare">
+              <li>
+                <span class="grow">Heute geplant</span>
+                <small class="muted">${fmtDuration(a.imBett)} im Bett + ${fmtDuration(
+                  a.tagschlaf
+                )} Tagschlaf</small>
+                <strong${drueber ? ' class="warn"' : ''}>${fmtDuration(a.minutes)}</strong>
+              </li>
+              <li>
+                <span class="grow">Ihre Grenze</span>
+                <small class="muted">schläft höchstens ${fmtDuration(g.kapazitaet)}</small>
+                <strong>${fmtDuration(g.minutes)}</strong>
+              </li>
+             </ul>`
+          : ''
+      }
+      <ul class="list compare">
+        <li>
+          <span class="grow">Nächte unter der Grenze</span>
+          <small class="muted">${g.unter.tage} ${g.unter.tage === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${anteil(g.unter)}% lange Wachphase</strong>
+        </li>
+        <li>
+          <span class="grow">Nächte darüber</span>
+          <small class="muted">${g.ueber.tage} ${g.ueber.tage === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${anteil(g.ueber)}% lange Wachphase</strong>
+        </li>
+      </ul>
+      <p class="hint budget">
+        Es gibt zwei Wege, das Angebot kleiner zu machen: später ins Bett oder früher raus.
+        Der Plan nimmt den späteren Abend, weil sich der Morgen schlechter steuern lässt -
+        wer sie morgens weiterschlafen lässt, vergrößert das Angebot wieder.
+      </p>
+      <p class="hint">
+        Beobachtung an den eigenen Daten, kein Beweis. Wächst ${name}, wächst auch die Grenze -
+        sie rechnet sich aus den letzten sechs Wochen immer wieder neu.
+      </p>
+    </div>`;
+}
+
 function tagzielKarte(ctx) {
   const z = ctx.tagziel;
   if (!z) return '';
@@ -2495,6 +2596,8 @@ function viewStatistik() {
     </div>
 
     ${bilanzKarte(context())}
+
+    ${angebotKarte(context())}
 
     ${fensterKarte(context())}
 

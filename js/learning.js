@@ -964,3 +964,63 @@ export function calmDayTarget(
   if (gegen - ziel < minUnterschied) return null;
   return { minutes: ziel, tage: ruhig.length, gegen, gegenTage: unruhig.length };
 }
+
+/**
+ * Wie viel Schlafgelegenheit verträgt dieses Kind in 24 Stunden?
+ *
+ * Das Angebot ist, was die Eltern in der Hand haben: Zeit im Bett plus
+ * Tagschlaf. Der Schlaf selbst ist es nicht - ein Kind schläft, was es
+ * schläft. Und genau da liegt die Falle: Über einer gewissen Grenze bringt
+ * mehr Angebot keinen Schlaf mehr, sondern Wachliegen mitten in der Nacht.
+ * Das Kind hat sein Pensum dann schon weg, und die restliche Zeit im Bett
+ * wird zur Wachphase.
+ *
+ * Die Grenze wird aus den eigenen Nächten geschätzt: Was das Kind an seinen
+ * guten Tagen insgesamt schläft (oberes Viertel), plus ein Zuschlag fürs
+ * Einschlafen. Das obere Viertel, nicht der Median - sonst wäre die Grenze
+ * so eng, dass die Hälfte der Nächte zu kurz geplant würde.
+ *
+ * @param {object[]} sleeps Einträge mit Date-Objekten (ohne kranke Tage)
+ * @param {object}   [opts]
+ * @returns {null|{minutes:number, kapazitaet:number, tage:number,
+ *                 unter:{tage:number, lang:number}, ueber:{tage:number, lang:number}}}
+ */
+export function sleepOfferLimit(
+  sleeps,
+  { days = 42, now = new Date(), minNaechte = 8, quantil = 0.75, puffer = 20, langePhase = 60 } = {}
+) {
+  const von = new Date(now.getTime() - days * DAY);
+  const naps = sleeps.filter((s) => s.type === 'nap' && s.end);
+  const naechte = [];
+  for (const nacht of sleeps) {
+    if (nacht.type !== 'night' || !nacht.end) continue;
+    if (nacht.start < von || nacht.start > now) continue;
+    const imBett = minutesBetween(nacht.start, nacht.end);
+    if (imBett < 4 * 60 || imBett > 16 * 60) continue;
+    const key = dayKey(nacht.start);
+    const tagschlaf = naps
+      .filter((n) => dayKey(n.start) === key)
+      .reduce((summe, n) => summe + minutesBetween(n.start, n.end), 0);
+    const gaps = (nacht.interruptions || []).filter((g) => g.end);
+    const wach = gaps.reduce((summe, g) => summe + minutesBetween(g.start, g.end), 0);
+    naechte.push({
+      angebot: imBett + tagschlaf,
+      geschlafen: imBett - wach + tagschlaf,
+      lang: gaps.some((g) => minutesBetween(g.start, g.end) >= langePhase)
+    });
+  }
+  if (naechte.length < minNaechte) return null;
+  const geschlafen = naechte.map((n) => n.geschlafen).sort((a, b) => a - b);
+  const kapazitaet =
+    geschlafen[Math.min(geschlafen.length - 1, Math.floor(quantil * (geschlafen.length - 1)))];
+  const minutes = Math.round(kapazitaet + puffer);
+  const unter = naechte.filter((n) => n.angebot < minutes);
+  const ueber = naechte.filter((n) => n.angebot >= minutes);
+  return {
+    minutes,
+    kapazitaet: Math.round(kapazitaet),
+    tage: naechte.length,
+    unter: { tage: unter.length, lang: unter.filter((n) => n.lang).length },
+    ueber: { tage: ueber.length, lang: ueber.filter((n) => n.lang).length }
+  };
+}

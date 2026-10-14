@@ -9,6 +9,7 @@ import {
   napCountBoundary,
   napWindowEffect,
   calmDayTarget,
+  sleepOfferLimit,
   usualNightSleep,
   learnProfile,
   napTransitionReport,
@@ -811,4 +812,62 @@ test('Markiert man es nicht, verzerrt die Autofahrt das Gelernte', () => {
   const e = napWindowEffect(sleeps, { now: new Date(2024, 4, 11, 9, 0), minGruppe: 2 });
   assert.ok(e, 'ohne Markierung liest die App einen Zusammenhang heraus');
   assert.equal(e.kurz.median, 25);
+});
+
+/* ------------------------------------------------- Schlafangebot und Grenze */
+
+// Ein Kind, das rund 12:30 schläft, egal wie lange es im Bett liegt. Wer ihm
+// 14 Stunden anbietet, bekommt keine 14 Stunden Schlaf, sondern anderthalb
+// Stunden Wachliegen.
+function tageMitAngebot() {
+  const sleeps = [];
+  for (let tag = 1; tag <= 16; tag++) {
+    const grosszuegig = tag % 2 === 0;
+    const start = new Date(2024, 4, tag, 11, 30);
+    sleeps.push({
+      type: 'nap',
+      start,
+      end: new Date(start.getTime() + 90 * 60000),
+      interruptions: []
+    });
+    // Knapp: 19:30-06:30 (11 Std im Bett, Angebot 12:30, alles geschlafen).
+    // Großzügig: 18:30-07:30 (13 Std im Bett, Angebot 14:30) - davon liegt
+    // sie 2 Std wach.
+    const bett = new Date(2024, 4, tag, grosszuegig ? 18 : 19, 30);
+    const auf = new Date(2024, 4, tag + 1, grosszuegig ? 7 : 6, 30);
+    const wachAb = new Date(2024, 4, tag + 1, 1, 0);
+    sleeps.push({
+      type: 'night',
+      start: bett,
+      end: auf,
+      interruptions: grosszuegig
+        ? [{ start: wachAb, end: new Date(wachAb.getTime() + 120 * 60000) }]
+        : []
+    });
+  }
+  return sleeps;
+}
+
+test('Die Angebotsgrenze kommt aus dem, was das Kind wirklich schläft', () => {
+  const g = sleepOfferLimit(tageMitAngebot(), { now: new Date(2024, 4, 17, 9, 0) });
+
+  // Knappe Nächte: 11:00 + 1:30 = 12:30 geschlafen.
+  // Großzügige: 13:00 - 2:00 + 1:30 = 12:30 geschlafen. Die Kapazität ist
+  // also 12:30, die Grenze 12:50.
+  assert.equal(g.kapazitaet, 750);
+  assert.equal(g.minutes, 770);
+  assert.equal(g.tage, 16);
+  // Und die Trennung stimmt: unter der Grenze keine lange Phase, darüber jede.
+  assert.equal(g.unter.lang, 0);
+  assert.equal(g.ueber.lang, g.ueber.tage);
+});
+
+test('Ohne genug Nächte gibt es keine Angebotsgrenze', () => {
+  const sleeps = tageMitAngebot().slice(0, 8);
+  assert.equal(sleepOfferLimit(sleeps, { now: new Date(2024, 4, 17, 9, 0) }), null);
+});
+
+test('Nächte außerhalb des Zeitraums zählen nicht mit', () => {
+  const g = sleepOfferLimit(tageMitAngebot(), { now: new Date(2024, 4, 17, 9, 0), days: 7 });
+  assert.ok(g === null || g.tage <= 8, `tage war ${g && g.tage}`);
 });
