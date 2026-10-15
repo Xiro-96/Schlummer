@@ -81,7 +81,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.2';
+export const APP_VERSION = '5.3';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -3051,12 +3051,23 @@ function viewMehr() {
           <input type="time" id="wunsch-auf" value="${esc(s.settings.wunschAuf || '')}" />
         </label>
       </div>
+      <p class="hint">
+        Gespeichert: ${
+          s.settings.wunschBett
+            ? `ins Bett <strong>${esc(s.settings.wunschBett)}</strong>`
+            : '<strong>Bettzeit fehlt noch</strong>'
+        }, ${
+          s.settings.wunschAuf
+            ? `wecken um <strong>${esc(s.settings.wunschAuf)}</strong>`
+            : '<strong>Weckzeit fehlt noch</strong>'
+        }.
+      </p>
       <div class="row tight">
         <button class="chip" data-action="clear-wunsch">Zurücksetzen</button>
         ${
-          s.settings.wunschBett && s.settings.wunschAuf && !store.activeExperiment()
-            ? `<button class="chip" data-action="start-experiment">Eine Woche ausprobieren</button>`
-            : ''
+          store.activeExperiment()
+            ? ''
+            : `<button class="chip" data-action="start-experiment">Eine Woche ausprobieren</button>`
         }
       </div>
       ${
@@ -3067,7 +3078,8 @@ function viewMehr() {
             ? `<p class="hint">Mit „Eine Woche ausprobieren“ merkt sich Schlummer den heutigen Tag
                 als Start, zählt mit, an wie vielen Tagen ihr die Zeiten gehalten habt, und
                 vergleicht die Nächte danach mit den zwei Wochen davor.</p>`
-            : ''
+            : `<p class="hint">Für „Eine Woche ausprobieren“ müssen beide Zeiten oben stehen -
+                sonst weiß Schlummer nicht, wogegen es später prüfen soll.</p>`
       }
       ${(() => {
         const ctx = context();

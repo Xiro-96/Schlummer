@@ -66,6 +66,36 @@ const karte = async (muster) =>
     return h ? h.closest('.card').innerText.replace(/\s+/g, ' ') : '';
   }, muster);
 
+// Der Knopf muss auch dann dastehen, wenn noch eine Zeit fehlt - sonst
+// sucht man ihn und findet nichts, statt zu lesen, was fehlt.
+await page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem('schlummer.state.v1'));
+  st.settings.wunschAuf = '';
+  localStorage.setItem('schlummer.state.v1', JSON.stringify(st));
+});
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForSelector('.arc-center');
+await geh('mehr');
+const ohneZeit = await karte('Wunschrhythmus');
+pruefe(/Weckzeit fehlt noch/.test(ohneZeit), 'die Karte sagt, welche Zeit fehlt');
+pruefe(
+  await page.$('[data-action="start-experiment"]') !== null,
+  'der Knopf ist trotzdem da'
+);
+await page.tap('[data-action="start-experiment"]');
+await page.waitForTimeout(300);
+const nichtGestartet = await page.evaluate(
+  () => JSON.parse(localStorage.getItem('schlummer.state.v1')).experiment
+);
+pruefe(!nichtGestartet, 'ohne beide Zeiten startet nichts');
+await page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem('schlummer.state.v1'));
+  st.settings.wunschAuf = '06:30';
+  localStorage.setItem('schlummer.state.v1', JSON.stringify(st));
+});
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForSelector('.arc-center');
+
 // Starten
 await geh('mehr');
 await page.waitForSelector('[data-action="start-experiment"]');
