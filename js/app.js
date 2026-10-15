@@ -76,7 +76,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.0';
+export const APP_VERSION = '5.1';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -426,7 +426,10 @@ function context(now = new Date()) {
       }
     }
   }
-  if (!napWindow && nextSleep && !status.sleeping && streuung != null && streuung >= 20) {
+  // Eine gewünschte Bettzeit ist eine Entscheidung, keine Schätzung - dann
+  // gibt es auch kein Fenster drumherum.
+  const festerAbend = Boolean(rhythmus.bett) && nextSleep && nextSleep.type === 'night';
+  if (!napWindow && !festerAbend && nextSleep && !status.sleeping && streuung != null && streuung >= 20) {
     const halb = Math.min(45, Math.round(streuung));
     let von = addMinutes(nextSleep.start, -halb);
     let bis = addMinutes(nextSleep.start, halb);
@@ -460,7 +463,8 @@ function context(now = new Date()) {
           need24h: need.minutes,
           dayMinutes: sleptSoFar + (running && running.type !== 'night' ? minutesBetween(running.start, now) : 0),
           bedtime: plan.bedtime,
-          morningWake: gewohntesAufstehen
+          morningWake: gewohntesAufstehen,
+          limit24h: angebotsGrenze ? angebotsGrenze.minutes : null
         })
       : null;
   // Die Nacht, die diese Familie üblicherweise hat - gemessen als das, was
@@ -1119,14 +1123,24 @@ function sleepDetailCard(ctx) {
             Heute <strong>${fmtDuration(ctx.bilanz.dayMinutes)}</strong>
             Tagschlaf &rarr; die Nacht braucht noch
             <strong>${fmtDuration(ctx.bilanz.nightNeed)}</strong>.
-            Ab ${fmtTime(next.start)} im Bett heißt rechnerisch wach um
-            <strong>${fmtTime(ctx.bilanz.wakeAt)}</strong>.
             ${
-              ctx.bilanz.surplus > 30
-                ? `Bis ${fmtTime(ctx.gewohntesAufstehen)} wären das ${fmtDuration(
-                    ctx.bilanz.surplus
-                  )} mehr Bettzeit als Schlafbedarf - diese Zeit wird erfahrungsgemäß nachts wach verbracht.`
-                : ''
+              ctx.bilanz.grenze
+                ? `Mit ${fmtTime(next.start)} bis ${fmtTime(
+                    ctx.gewohntesAufstehen
+                  )} bietest du ihr <strong>${fmtDuration(
+                    ctx.bilanz.angebot
+                  )}</strong> an - ihre Grenze liegt bei ${fmtDuration(ctx.bilanz.grenze)}.
+                   ${
+                     ctx.bilanz.ueberGrenze > 15
+                       ? `Das sind <strong>${fmtDuration(
+                           ctx.bilanz.ueberGrenze
+                         )} zu viel</strong>; erfahrungsgemäß landen die als Wachphase mitten in
+                          der Nacht. Entweder morgens früher wecken oder den Mittagsschlaf kürzer
+                          halten.`
+                       : 'Passt.'
+                   }`
+                : `Ab ${fmtTime(next.start)} im Bett heißt rechnerisch wach um
+                   <strong>${fmtTime(ctx.bilanz.wakeAt)}</strong>.`
             }
           </p>`
         : ''

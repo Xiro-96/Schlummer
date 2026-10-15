@@ -118,6 +118,30 @@ const zu = await page.evaluate(() => !document.querySelector('dialog').open);
 console.log('  Sheet nach dem Tippen auf den Knopf:', zu ? 'zu' : 'OFFEN');
 pruefe(zu, 'der Knopf schliesst das Sheet');
 
+// Abends: Die App darf sich jetzt nicht selbst widersprechen - eine
+// gewuenschte Bettzeit ist eine Entscheidung, kein Schaetzwert, und die
+// Warnung darf nicht gegen genau diese Entscheidung laufen.
+await page.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('schlummer.state.v1'));
+  s.sleeps.push({ id: 'nap-heute', type: 'nap',
+    start: '2026-09-26T12:18:00+02:00', end: '2026-09-26T13:51:00+02:00',
+    note: '', settle: 'fast', mood: 'happy', wakings: null, interruptions: [] });
+  localStorage.setItem('schlummer.state.v1', JSON.stringify(s));
+});
+await page.clock.setFixedTime(new Date('2026-09-26T19:24:00+02:00'));
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForSelector('.arc-center');
+const abend = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+const bogen = await page.evaluate(() => document.querySelector('.arc-center').innerText.replace(/\s+/g, ' '));
+console.log('  Bogen abends:', bogen);
+pruefe(!/schwanken von Tag zu Tag/.test(abend), 'kein Streufenster um eine gewuenschte Bettzeit');
+const satz = abend.match(/Heute [^.]*Tagschlaf[^|]{0,260}/);
+if (satz) console.log('  ' + satz[0].slice(0, 240));
+pruefe(/bietest du ihr/.test(abend), 'die Rechnung spricht vom Angebot');
+pruefe(!/mehr Bettzeit als Schlafbedarf/.test(abend),
+  'keine Warnung gegen die eigene Wunschzeit');
+
+
 await page.screenshot({ path: join(BILDER, 'shot-wunsch.png'), fullPage: true });
 await browser.close();
 console.log(fehler ? `\n${fehler} Abweichung(en)` : '\nAlles wie erwartet');

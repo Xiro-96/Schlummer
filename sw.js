@@ -1,5 +1,5 @@
 /* Service Worker: App-Shell offline verfügbar halten. */
-const CACHE = 'schlummer-v44';
+const CACHE = 'schlummer-v45';
 const ASSETS = [
   './',
   './index.html',

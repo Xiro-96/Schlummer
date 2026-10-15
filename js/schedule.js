@@ -729,7 +729,7 @@ export function findMissingNights(sleeps = [], now = new Date(), tage = 14) {
  * @param {Date}   o.morningWake  gewünschte Aufstehzeit am nächsten Morgen
  * @returns {{nightNeed:number, inBed:number, surplus:number, wakeAt:Date}}
  */
-export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake }) {
+export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake, limit24h = null }) {
   const nightNeed = Math.max(0, need24h - dayMinutes);
   const ziel = new Date(bedtime);
   ziel.setHours(morningWake.getHours(), morningWake.getMinutes(), 0, 0);
@@ -740,6 +740,13 @@ export function nightBalance({ need24h, dayMinutes = 0, bedtime, morningWake }) 
     nightNeed: Math.round(nightNeed),
     inBed: Math.round(inBed),
     surplus: Math.round(inBed - nightNeed),
+    // Das Angebot des Tages und wie weit es über ihrer Grenze liegt. Der
+    // Bedarf oben ist ein Median - die Hälfte aller Tage liegt darüber, und
+    // eine Warnung an jedem zweiten Tag ist keine Warnung. Die Grenze ist
+    // der Wert, an dem in den eigenen Nächten wirklich etwas kippt.
+    angebot: Math.round(inBed + dayMinutes),
+    ueberGrenze: limit24h ? Math.round(inBed + dayMinutes - limit24h) : null,
+    grenze: limit24h ? Math.round(limit24h) : null,
     // Wann die Nacht rechnerisch zu Ende ist, wenn sie zur Bettzeit einschläft.
     wakeAt: addMinutes(bedtime, nightNeed)
   };
