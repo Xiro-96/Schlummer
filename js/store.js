@@ -27,6 +27,9 @@ const DEFAULT_STATE = {
     lastBackupAt: null
   },
   sleeps: [],
+  // Laufendes Experiment und die abgeschlossenen davor.
+  experiment: null,
+  experimente: [],
   events: [],
   notes: [],
   // Tage, an denen das Kind krank war (YYYY-MM-DD, Ortszeit). Sie bleiben im
@@ -59,6 +62,8 @@ export function load() {
       state.morningOverrides && typeof state.morningOverrides === 'object'
         ? state.morningOverrides
         : {};
+    state.experimente = Array.isArray(state.experimente) ? state.experimente : [];
+    if (state.experiment && typeof state.experiment !== 'object') state.experiment = null;
   } catch (err) {
     console.warn('Gespeicherte Daten unlesbar, starte neu.', err);
     state = clone(DEFAULT_STATE);
@@ -471,6 +476,54 @@ export function setWunschZeit(feld, wert) {
   });
 }
 
+/* --------------------------------------------------------- Experimente */
+
+export function activeExperiment() {
+  const e = load().experiment;
+  return e && !e.ende ? e : null;
+}
+
+export function pastExperiments() {
+  return load().experimente || [];
+}
+
+/**
+ * Ein Experiment beginnt heute. Die Vorgabe wird mitgespeichert, damit die
+ * Auswertung später weiß, wogegen sie prüft - auch wenn der Wunschrhythmus
+ * inzwischen ein anderer ist.
+ */
+export function startExperiment({ name = '', tage = 7, ziel = null, start = new Date() } = {}) {
+  const id = `e${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+  update((s) => {
+    if (s.experiment && !s.experiment.ende) {
+      s.experimente = [...(s.experimente || []), { ...s.experiment, ende: new Date().toISOString() }];
+    }
+    s.experiment = {
+      id,
+      name,
+      tage,
+      ziel,
+      start: new Date(start.getFullYear(), start.getMonth(), start.getDate()).toISOString(),
+      ende: null
+    };
+  });
+  return id;
+}
+
+export function stopExperiment(now = new Date()) {
+  update((s) => {
+    if (!s.experiment || s.experiment.ende) return;
+    s.experiment = { ...s.experiment, ende: now.toISOString() };
+    s.experimente = [...(s.experimente || []), s.experiment];
+  });
+}
+
+export function discardExperiment() {
+  update((s) => {
+    s.experiment = null;
+  });
+}
+
 export function morningWakeFor(day = new Date()) {
   const [morningStart, morningEnd] = morgenFenster(day);
   const night = allSleeps()
@@ -623,6 +676,9 @@ export function importJSON(text) {
     parsed.morningOverrides && typeof parsed.morningOverrides === 'object'
       ? parsed.morningOverrides
       : {};
+  state.experimente = Array.isArray(parsed.experimente) ? parsed.experimente : [];
+  state.experiment =
+    parsed.experiment && typeof parsed.experiment === 'object' ? parsed.experiment : null;
   state.settings = { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) };
   state.child = { ...DEFAULT_STATE.child, ...(parsed.child || {}) };
   save();

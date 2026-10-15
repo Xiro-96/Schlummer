@@ -49,6 +49,11 @@ import {
   toMinutes
 } from './learning.js';
 import {
+  experimentReport,
+  STANDARD_TAGE,
+  TOLERANZ
+} from './experiment.js';
+import {
   averageWakings,
   clinicHintsFor,
   compareWakings,
@@ -76,7 +81,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.1';
+export const APP_VERSION = '5.2';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -331,6 +336,16 @@ function context(now = new Date()) {
   // was die Eltern in der Hand haben - der Schlaf selbst nicht. Über ihrer
   // Grenze wird aus dem Mehrangebot kein Schlaf, sondern Wachliegen mitten
   // in der Nacht. Also wird der Abend notfalls nach hinten geschoben.
+  // Auch ein abgeschlossenes Experiment bleibt sichtbar - sonst verschwindet
+  // beim Beenden genau die Auswertung, für die man es gemacht hat.
+  const experiment = store.activeExperiment() || store.pastExperiments().slice(-1)[0] || null;
+  const bericht = experiment
+    ? experimentReport(store.allSleeps(), experiment, {
+        now,
+        sickDays: store.getState().sickDays || []
+      })
+    : null;
+
   const angebotsGrenze = store.getState().settings.learning
     ? sleepOfferLimit(store.learningSleeps(), { now })
     : null;
@@ -507,6 +522,8 @@ function context(now = new Date()) {
     fenstereffekt,
     tagziel,
     rhythmus,
+    experiment,
+    bericht,
     angebot,
     angebotsGrenze,
     krank,
@@ -1682,6 +1699,32 @@ function viewHeute() {
 
     ${krankKarte(ctx)}
 
+    ${(() => {
+      // Ein laufendes Experiment gehoert auf die Startseite - sonst vergisst
+      // man am dritten Abend, dass man gerade etwas ausprobiert.
+      const b = ctx.bericht;
+      if (!b || !b.laeuft || !ctx.experiment.ziel) return '';
+      const z = ctx.experiment.ziel;
+      return `<div class="card">
+        <div class="card-head">
+          <h2>🧪 ${esc(ctx.experiment.name || 'Experiment')}</h2>
+          <small class="muted">Tag ${b.tagNummer} von ${b.tage}</small>
+        </div>
+        <p class="hint">
+          Heute: ins Bett um <strong>${fmtTime0(z.bettMinute)}</strong>, morgen früh wecken um
+          <strong>${fmtTime0(z.aufMinute)}</strong>${
+            z.tagschlaf != null
+              ? `, Mittagsschlaf höchstens <strong>${fmtDuration(z.tagschlaf)}</strong>`
+              : ''
+          }.
+        </p>
+        <p class="hint">
+          Bisher an ${b.gehalten.tage} von ${b.gehalten.von} Tagen gehalten. Die Auswertung
+          steht unter Statistik.
+        </p>
+      </div>`;
+    })()}
+
     ${
       ctx.festgefahren || (ctx.krank && !status.sleeping && !status.nightWaking)
         ? ''
@@ -2284,6 +2327,120 @@ function trendKarte() {
  * Tagen gemessen. Für viele Familien ist das die eigentliche Antwort auf
  * "warum schläft sie mittags nur eine halbe Stunde".
  */
+/* ------------------------------------------------------------ Experiment */
+
+/** Minuten seit Mitternacht als Uhrzeit, null-sicher. */
+function uhr(minuten) {
+  return minuten == null ? '--:--' : fmtTime0(minuten);
+}
+
+/** Wie klar ist das Ergebnis? Ehrlich, auch wenn es "gar nicht" heißt. */
+function deutung(b) {
+  if (!b.genug) {
+    return `Für eine Aussage ist das noch zu wenig: ${b.waehrend.naechte} Nächte im Experiment
+            gegen ${b.vorher.naechte} davor. Ab vier je Seite rechnet Schlummer.`;
+  }
+  const vorherAnteil = b.vorher.lang / b.vorher.naechte;
+  const jetztAnteil = b.waehrend.lang / b.waehrend.naechte;
+  const prozent = Math.round(b.zufall * 100);
+  const richtung =
+    jetztAnteil < vorherAnteil
+      ? 'weniger lange Wachphasen als vorher'
+      : jetztAnteil > vorherAnteil
+        ? 'mehr lange Wachphasen als vorher'
+        : 'genauso viele lange Wachphasen wie vorher';
+  if (jetztAnteil === vorherAnteil) {
+    return `Es sind ${richtung}. An den Nächten hat sich nichts geändert.`;
+  }
+  return `Es sind <strong>${richtung}</strong>. So ein Unterschied kommt allerdings bei reinem
+          Zufall noch in <strong>${prozent} von 100</strong> Fällen heraus
+          ${
+            prozent > 20
+              ? '- das ist zu oft, um daraus schon etwas zu schließen. Lass es länger laufen.'
+              : '- das spricht dafür, dass wirklich etwas dahintersteckt.'
+          }`;
+}
+
+function experimentKarte(ctx) {
+  const b = ctx.bericht;
+  const e = ctx.experiment;
+  if (!e || !b) return '';
+  const zeile = (titel, vorher, jetzt) => `
+    <li>
+      <span class="grow">${titel}</span>
+      <small class="muted">vorher ${vorher}</small>
+      <strong>${jetzt}</strong>
+    </li>`;
+  const v = b.vorher;
+  const w = b.waehrend;
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>${esc(e.name || 'Experiment')}</h2>
+        <small class="muted">${
+          b.laeuft ? `Tag ${b.tagNummer} von ${b.tage}` : 'abgeschlossen'
+        }</small>
+      </div>
+      ${
+        e.ziel
+          ? `<p class="hint">
+              Vorgabe: ins Bett <strong>${uhr(e.ziel.bettMinute)}</strong>, wecken um
+              <strong>${uhr(e.ziel.aufMinute)}</strong>${
+                e.ziel.tagschlaf != null
+                  ? `, Mittagsschlaf höchstens <strong>${fmtDuration(e.ziel.tagschlaf)}</strong>`
+                  : ''
+              }. Als gehalten zählt ein Tag mit bis zu ${TOLERANZ} Minuten Abweichung.
+             </p>
+             <p class="hint ${
+               b.gehalten.von && b.gehalten.tage === b.gehalten.von ? 'budget' : ''
+             }">
+              Eingehalten an <strong>${b.gehalten.tage} von ${b.gehalten.von}</strong> ausgewerteten
+              Tagen.${
+                b.gehalten.von && b.gehalten.tage < b.gehalten.von
+                  ? ' Ein Experiment, das nicht durchgehalten wird, beantwortet die Frage nicht.'
+                  : ''
+              }
+             </p>`
+          : ''
+      }
+      <ul class="list compare">
+        ${zeile(
+          'Nächte mit langer Wachphase',
+          `${v.lang} von ${v.naechte}`,
+          `${w.lang} von ${w.naechte}`
+        )}
+        ${zeile(
+          'Wachzeit pro Nacht (Median)',
+          v.wachMedian == null ? '-' : fmtDuration(v.wachMedian),
+          w.wachMedian == null ? '-' : fmtDuration(w.wachMedian)
+        )}
+        ${zeile(
+          'Schlafangebot (Median)',
+          v.angebotMedian == null ? '-' : fmtDuration(v.angebotMedian),
+          w.angebotMedian == null ? '-' : fmtDuration(w.angebotMedian)
+        )}
+        ${zeile(
+          'Wirklich geschlafen (Median)',
+          v.geschlafenMedian == null ? '-' : fmtDuration(v.geschlafenMedian),
+          w.geschlafenMedian == null ? '-' : fmtDuration(w.geschlafenMedian)
+        )}
+        ${zeile('Bettzeit (Median)', uhr(v.bettMedian), uhr(w.bettMedian))}
+        ${zeile('Aufstehen (Median)', uhr(v.aufMedian), uhr(w.aufMedian))}
+      </ul>
+      <p class="hint ${b.genug && b.zufall <= 0.2 ? 'budget' : 'warn'}">${deutung(b)}</p>
+      ${
+        b.laeuft
+          ? `<div class="row tight">
+              <button class="chip danger" data-action="stop-experiment">Vorzeitig beenden</button>
+             </div>`
+          : ''
+      }
+      <p class="hint">
+        Verglichen wird mit den ${b.tage * 2} Tagen davor. Kranke Tage zählen auf keiner Seite mit.
+      </p>
+    </div>`;
+}
+
 function angebotKarte(ctx) {
   const g = ctx.angebotsGrenze;
   if (!g) return '';
@@ -2642,6 +2799,8 @@ function viewStatistik() {
 
     ${bilanzKarte(context())}
 
+    ${experimentKarte(context())}
+
     ${angebotKarte(context())}
 
     ${fensterKarte(context())}
@@ -2894,7 +3053,22 @@ function viewMehr() {
       </div>
       <div class="row tight">
         <button class="chip" data-action="clear-wunsch">Zurücksetzen</button>
+        ${
+          s.settings.wunschBett && s.settings.wunschAuf && !store.activeExperiment()
+            ? `<button class="chip" data-action="start-experiment">Eine Woche ausprobieren</button>`
+            : ''
+        }
       </div>
+      ${
+        store.activeExperiment()
+          ? `<p class="hint budget">Dieser Rhythmus läuft gerade als Experiment - die Auswertung
+              steht unter Statistik.</p>`
+          : s.settings.wunschBett && s.settings.wunschAuf
+            ? `<p class="hint">Mit „Eine Woche ausprobieren“ merkt sich Schlummer den heutigen Tag
+                als Start, zählt mit, an wie vielen Tagen ihr die Zeiten gehalten habt, und
+                vergleicht die Nächte danach mit den zwei Wochen davor.</p>`
+            : ''
+      }
       ${(() => {
         const ctx = context();
         const g = ctx.angebotsGrenze;
@@ -3849,6 +4023,30 @@ const actions = {
   // gespeichert - hier wird nur zugemacht.
   'close-dialog'() {
     if (dialog.open) dialog.close();
+  },
+  'start-experiment'() {
+    const s = store.getState().settings;
+    if (!s.wunschBett || !s.wunschAuf) {
+      toast('Erst Bettzeit und Weckzeit eintragen');
+      return;
+    }
+    const ctx = context();
+    store.startExperiment({
+      name: `Rhythmus ${s.wunschBett}-${s.wunschAuf}`,
+      tage: STANDARD_TAGE,
+      ziel: {
+        bettMinute: toMinutes(s.wunschBett),
+        aufMinute: toMinutes(s.wunschAuf),
+        tagschlaf: ctx.tagziel ? ctx.tagziel.minutes : ctx.band.dayTimeSleepMin
+      }
+    });
+    toast('Experiment gestartet - eine Woche durchhalten');
+    render();
+  },
+  'stop-experiment'() {
+    store.stopExperiment();
+    toast('Experiment abgeschlossen');
+    render();
   },
   'clear-wunsch'() {
     store.setWunschZeit('bett', '');
