@@ -45,7 +45,8 @@ import {
   napTransitionHint,
   personalizedBand,
   sleepPressure,
-  toClock
+  toClock,
+  toMinutes
 } from './learning.js';
 import {
   averageWakings,
@@ -75,7 +76,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '4.9';
+export const APP_VERSION = '5.0';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -208,6 +209,20 @@ function context(now = new Date()) {
   let band = personalizedBand(baseBand, profile, tagesform);
   if (tagesform != null && tagesform !== band.naps) band = bandForNapCount(band, tagesform);
 
+  // Wunschrhythmus: Was die Eltern wollen, schlägt die gelernte Gewohnheit.
+  // Sonst wandert der Abend mit jedem Ausschlaf-Wochenende weiter nach
+  // hinten - die App lernt die Verschiebung und schreibt sie fort.
+  const rhythmus = store.wunschZeiten();
+  if (rhythmus.bett) {
+    const ziel = toMinutes(rhythmus.bett);
+    const deckel = toMinutes(band.bedtimeCeiling || band.bedtimeLatest);
+    band = {
+      ...band,
+      bedtimeEarliest: toClock(Math.max(0, ziel - 30)),
+      bedtimeLatest: toClock(Math.min(deckel, ziel + 30))
+    };
+  }
+
   // Das Budget des Tages: das gelernte Ziel, sonst der Richtwert des Alters.
   // Es hängt am Tag, nicht an der Zahl der Nickerchen - wird aus einem Tag mit
   // einem Nickerchen einer mit zweien, teilt sich dieselbe Menge Schlaf auf
@@ -255,8 +270,11 @@ function context(now = new Date()) {
   const langeNacht = store.getState().settings.learning
     ? usualNightSleep(store.learningSleeps(), now, { anteil: 0.9 })
     : null;
-  const gewohntesAufstehen =
-    profile.active && profile.values.morning != null
+  // Anker für die Budget-Rechnung: die Zeit, zu der dieses Kind morgens
+  // aufstehen *soll*, sonst die, zu der es sonst aufsteht.
+  const gewohntesAufstehen = rhythmus.auf
+    ? timeOnDay(morningWake, rhythmus.auf)
+    : profile.active && profile.values.morning != null
       ? timeOnDay(morningWake, toClock(profile.values.morning))
       : morningWake;
   const gewohnteBettzeit =
@@ -284,6 +302,10 @@ function context(now = new Date()) {
     now,
     pressureMinutes: pressure.minutes,
     minFirstWindow: fenstereffekt ? fenstereffekt.schwelle : 0,
+    // Die Wunsch-Bettzeit zieht den Tag zu sich hin, statt dass der Abend
+    // der gelernten Verschiebung hinterherläuft.
+    bedtimeTarget: rhythmus.bett ? timeOnDay(morningWake, rhythmus.bett) : null,
+    morningTarget: rhythmus.auf ? timeOnDay(morningWake, rhythmus.auf) : null,
     // Lag die Wachphase am Rand der Nacht, bleibt der Abend, wo er sonst ist.
     bedtimeNotBefore: randphase ? gewohnteBettzeit : null
   };
@@ -326,7 +348,15 @@ function context(now = new Date()) {
   // Nur solange der Abend noch geplant ist - eine laufende Nacht verschiebt
   // niemand mehr.
   const abendOffen = !activeNaps.some((s) => s.type === 'night' && (!s.end || s.start >= morningWake));
-  if (angebot && angebotsGrenze && abendOffen && angebot.minutes > angebotsGrenze.minutes) {
+  // Eine ausdrücklich gewünschte Bettzeit schiebt der Deckel nicht weg - da
+  // warnt die Einstellungsseite, statt den Plan gegen die Eltern zu stellen.
+  if (
+    angebot &&
+    angebotsGrenze &&
+    abendOffen &&
+    !rhythmus.bett &&
+    angebot.minutes > angebotsGrenze.minutes
+  ) {
     const spaeter = addMinutes(
       angebot.nachtEnde,
       -(angebotsGrenze.minutes - angebot.tagschlaf)
@@ -472,6 +502,7 @@ function context(now = new Date()) {
     gewohnteBettzeit,
     fenstereffekt,
     tagziel,
+    rhythmus,
     angebot,
     angebotsGrenze,
     krank,
@@ -2833,6 +2864,49 @@ function viewMehr() {
     </div>
 
     <div class="card">
+      <div class="card-head"><h2>Wunschrhythmus</h2></div>
+      <p class="hint">
+        Die Zeiten, die ihr haben wollt. Gesetzt gehen sie der gelernten Gewohnheit vor -
+        sonst wandert der Abend mit jedem Ausschlaf-Wochenende weiter nach hinten, weil die
+        App die Verschiebung mitlernt und fortschreibt. Leer lassen heißt: alles wie gehabt.
+      </p>
+      <div class="row tight">
+        <label class="field grow">Abends ins Bett
+          <input type="time" id="wunsch-bett" value="${esc(s.settings.wunschBett || '')}" />
+        </label>
+        <label class="field grow">Morgens wecken
+          <input type="time" id="wunsch-auf" value="${esc(s.settings.wunschAuf || '')}" />
+        </label>
+      </div>
+      <div class="row tight">
+        <button class="chip" data-action="clear-wunsch">Zurücksetzen</button>
+      </div>
+      ${(() => {
+        const ctx = context();
+        const g = ctx.angebotsGrenze;
+        if (!g || !s.settings.wunschBett || !s.settings.wunschAuf) return '';
+        const bett = toMinutes(s.settings.wunschBett);
+        const auf = toMinutes(s.settings.wunschAuf);
+        const imBett = (auf + 24 * 60 - bett) % (24 * 60);
+        const tag = ctx.tagziel ? ctx.tagziel.minutes : ctx.baseBand.dayTimeSleepMin;
+        const angebot = imBett + tag;
+        const passt = angebot <= g.minutes;
+        return `<p class="hint ${passt ? 'budget' : 'warn'}">
+          ${fmtTime0(bett)} bis ${fmtTime0(auf)} sind <strong>${fmtDuration(imBett)}</strong> im
+          Bett. Mit ${fmtDuration(tag)} Mittagsschlaf macht das ein Angebot von
+          <strong>${fmtDuration(angebot)}</strong> - ${
+            passt
+              ? `unter ihrer Grenze von ${fmtDuration(g.minutes)}. Passt.`
+              : `über ihrer Grenze von ${fmtDuration(g.minutes)}. Das sind ${fmtDuration(
+                  angebot - g.minutes
+                )} zu viel; erfahrungsgemäß landen die als Wachphase mitten in der Nacht.
+                 Entweder morgens früher wecken oder den Mittagsschlaf kürzer halten.`
+          }
+        </p>`;
+      })()}
+    </div>
+
+    <div class="card">
       <div class="card-head"><h2>Erinnerung</h2></div>
       <label class="spread">
         <span>Hinweis, wenn das Wachfenster endet</span>
@@ -3324,6 +3398,12 @@ function interruptionEditor(entry) {
     </fieldset>`;
 }
 
+/** Minuten seit Mitternacht als "HH:MM". */
+function fmtTime0(minuten) {
+  const m = ((minuten % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 /** Zeigt im Bearbeiten-Dialog die resultierende Dauer an. */
 function updateDialogDuration() {
   const out = dialog.querySelector('#d-duration');
@@ -3751,6 +3831,17 @@ const actions = {
   'rate-sleep'(el) {
     openRatingDialog(el.dataset.id);
   },
+  // Der Knopf unter der Bewertung. Die Antworten selbst sind längst
+  // gespeichert - hier wird nur zugemacht.
+  'close-dialog'() {
+    if (dialog.open) dialog.close();
+  },
+  'clear-wunsch'() {
+    store.setWunschZeit('bett', '');
+    store.setWunschZeit('auf', '');
+    toast('Wunschrhythmus zurückgesetzt');
+    render();
+  },
   async 'quick-sound'(el) {
     if (audio.isPlaying()) {
       audio.stop();
@@ -4056,6 +4147,12 @@ document.addEventListener('change', (event) => {
         [el.dataset.field]: value
       });
     }
+    render();
+    return;
+  }
+  if (el.id === 'wunsch-bett' || el.id === 'wunsch-auf') {
+    store.setWunschZeit(el.id === 'wunsch-bett' ? 'bett' : 'auf', el.value || '');
+    toast(el.value ? 'Wunschzeit gespeichert' : 'Wunschzeit entfernt');
     render();
     return;
   }

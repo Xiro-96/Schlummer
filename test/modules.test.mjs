@@ -66,3 +66,26 @@ test('Keine echten Kinderdaten im Repo', () => {
 
   suche(WURZEL);
 });
+
+test('Jeder Knopf hat einen Handler', () => {
+  // Der Knopf unter der Bewertung hatte monatelang keinen - beim Tippen
+  // passierte einfach nichts, und man merkt es nur, wenn man es benutzt.
+  const quelle = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  const benutzt = new Set([...quelle.matchAll(/data-action="([a-z0-9-]+)"/g)].map((m) => m[1]));
+
+  const von = quelle.indexOf('const actions = {');
+  assert.ok(von > 0, 'der Handler-Block ist auffindbar');
+  const bis = quelle.indexOf('\n};', von);
+  const block = quelle.slice(von, bis);
+  const definiert = new Set(
+    [...block.matchAll(/^ {2}(?:async\s+)?['"]?([a-z0-9-]+)['"]?\(/gm)].map((m) => m[1])
+  );
+
+  // Diese hängen am change-Ereignis der Eingabefelder, nicht am Klick.
+  const ueberChange = new Set(['set-waking']);
+  const ohne = [...benutzt].filter((a) => !definiert.has(a) && !ueberChange.has(a));
+  assert.deepEqual(ohne, [], `ohne Handler: ${ohne.join(', ')}`);
+
+  const tot = [...definiert].filter((a) => !benutzt.has(a));
+  assert.deepEqual(tot, [], `nie benutzt: ${tot.join(', ')}`);
+});

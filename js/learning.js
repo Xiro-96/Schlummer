@@ -929,7 +929,7 @@ export function usualNightSleep(
  */
 export function calmDayTarget(
   sleeps,
-  { days = 35, now = new Date(), minNaechte = 4, wachGrenze = 30, minUnterschied = 15 } = {}
+  { days = 56, now = new Date(), minNaechte = 4, wachGrenze = 30, minUnterschied = 15 } = {}
 ) {
   const von = new Date(now.getTime() - days * DAY);
   const naps = sleeps.filter(

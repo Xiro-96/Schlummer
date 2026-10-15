@@ -783,6 +783,53 @@ test('Der Nickerchen-Deckel schützt die Nachtzeit', () => {
   assert.equal(napCap({ need24h: 767, nightMinutes: 670, sleptToday: 60, napStart: at(14, 0) }), null);
 });
 
+test('Eine Wunsch-Bettzeit zieht das Nickerchen nach vorn', () => {
+  // Ein Kind mit langen Fenstern: ohne Wunsch landet der Abend spaet.
+  const band = {
+    ...bandForAge(480),
+    wakeWindowMin: 330,
+    wakeWindowMax: 350,
+    napLengthMin: 110,
+    dayTimeSleepMin: 110,
+    bedtimeEarliest: '18:30',
+    bedtimeLatest: '20:15',
+    bedtimeCeiling: '20:15'
+  };
+  const morgen = at(7, 30);
+  const ohne = buildPlan({ band, morningWake: morgen, sleeps: [], now: at(8, 0) });
+  const mit = buildPlan({
+    band: { ...band, bedtimeEarliest: '18:30', bedtimeLatest: '19:30' },
+    morningWake: morgen,
+    sleeps: [],
+    now: at(8, 0),
+    bedtimeTarget: at(19, 0)
+  });
+  const nap = (p) => p.blocks.find((b) => b.type === 'nap');
+  assert.ok(ohne.bedtime > mit.bedtime, `ohne ${fmtTime(ohne.bedtime)}, mit ${fmtTime(mit.bedtime)}`);
+  assert.equal(fmtTime(mit.bedtime), '19:00');
+  // Und das Nickerchen ist frueher vorbei, damit der Abend ueberhaupt passt.
+  assert.ok(
+    nap(mit).end < nap(ohne).end,
+    `Nickerchen endet ohne ${fmtTime(nap(ohne).end)}, mit ${fmtTime(nap(mit).end)}`
+  );
+});
+
+test('Das Nachtende folgt der Wunsch-Aufstehzeit, der Tagesanfang nicht', () => {
+  const band = bandForAge(480);
+  // Heute frueh war sie um 07:30 wach, geweckt werden soll sie um 06:30.
+  const plan = buildPlan({
+    band,
+    morningWake: at(7, 30),
+    sleeps: [],
+    now: at(8, 0),
+    morningTarget: at(6, 30)
+  });
+  const nacht = plan.blocks.find((b) => b.type === 'night');
+  assert.equal(fmtTime(nacht.end), '06:30');
+  // Der erste Block beginnt trotzdem, als sie wirklich wach wurde.
+  assert.equal(fmtTime(plan.blocks[0].start), '07:30');
+});
+
 test('Die Bettzeit aus dem Budget verlangt keine Nacht, die es nie gab', () => {
   const morgen = at(6, 40);
   // Ein Tag mit fast keinem Nickerchen: die reine Rechnung will 12:23 Nacht.

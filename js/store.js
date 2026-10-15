@@ -11,6 +11,11 @@ const DEFAULT_STATE = {
   child: { name: '', birthDate: '', dueDate: '' },
   settings: {
     morningWake: '07:00',
+    // Wunschrhythmus: die Zeiten, die die Familie haben will. Gesetzt
+    // schlagen sie die gelernte Gewohnheit - sonst wandert der Plan mit
+    // jedem Ausschlaf-Wochenende weiter nach hinten.
+    wunschBett: '',
+    wunschAuf: '',
     soundTimerMin: 45,
     soundVolume: 0.6,
     lastSound: 'white',
@@ -451,6 +456,21 @@ export function setMorningOverride(day, hhmm) {
   save();
 }
 
+/** Wunschzeit als "HH:MM" oder null. */
+export function wunschZeiten() {
+  const s = load().settings;
+  return {
+    bett: s.wunschBett || null,
+    auf: s.wunschAuf || null
+  };
+}
+
+export function setWunschZeit(feld, wert) {
+  update((s) => {
+    s.settings[feld === 'bett' ? 'wunschBett' : 'wunschAuf'] = wert || '';
+  });
+}
+
 export function morningWakeFor(day = new Date()) {
   const [morningStart, morningEnd] = morgenFenster(day);
   const night = allSleeps()
@@ -465,6 +485,10 @@ export function morningWakeFor(day = new Date()) {
   if (gesetzt) return timeOnDay(day, gesetzt);
   // Sonst die gelebte Gewohnheit statt der Zahl, die beim Einrichten einmal
   // eingetippt wurde.
+  // Eine gesetzte Wunsch-Aufstehzeit geht der gelebten Gewohnheit vor: Wer
+  // sie einträgt, will den Rhythmus dorthin bringen, nicht ihm hinterher.
+  const wunsch = load().settings.wunschAuf;
+  if (wunsch) return timeOnDay(day, wunsch);
   const ueblich = usualMorningMinutes(day);
   if (ueblich != null) {
     const d = new Date(day);

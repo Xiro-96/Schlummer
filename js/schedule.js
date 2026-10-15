@@ -164,8 +164,13 @@ export function buildPlan({
   now = new Date(),
   pressureMinutes = 0,
   minFirstWindow = 0,
-  bedtimeNotBefore = null
+  bedtimeNotBefore = null,
+  bedtimeTarget = null,
+  morningTarget = null
 }) {
+  // Wann der Morgen kommen *soll* - für die Prognose des Nachtendes. Der
+  // Tagesanfang bleibt davon unberührt: der steht fest, er war heute früh.
+  const morgenZiel = morningTarget || morningWake;
   // Die Nacht dieses Abends: egal ob sie noch läuft oder schon beendet ist
   // (etwa weil das Kind kurz wach war). Sie beendet den geplanten Tag.
   const nights = sleeps
@@ -219,7 +224,7 @@ export function buildPlan({
   if (eveningNight) {
     const nightEnd = nightEndFor(
       eveningNight.start,
-      morningWake,
+      morgenZiel,
       band,
       nights.reduce((sum, n) => sum + awakeMinutesIn(n, now), 0)
     );
@@ -237,7 +242,7 @@ export function buildPlan({
         });
       }
       // Beendete Nacht mit ihrem echten Ende, laufende mit der Aufstehprognose.
-      const end = night.end || nightEndFor(night.start, morningWake, band, awakeMinutesIn(night, now));
+      const end = night.end || nightEndFor(night.start, morgenZiel, band, awakeMinutesIn(night, now));
       blocks.push({
         type: 'night',
         start: night.start,
@@ -289,6 +294,10 @@ export function buildPlan({
     wakeWindowFor(band, totalWindows - 1, totalWindows) + pressureMinutes
   );
   const minEvening = Math.round(lastWindowRaw * 0.75);
+  // Soll der Abend zu einer bestimmten Zeit beginnen, muss das letzte
+  // Nickerchen rechtzeitig vorbei sein. Dann rückt es nach vorn - nicht der
+  // Abend nach hinten.
+  const napEndBy = bedtimeTarget ? addMinutes(bedtimeTarget, -minEvening) : null;
 
   for (let i = 0; i < remainingNaps; i++) {
     let ww = Math.max(
@@ -298,10 +307,14 @@ export function buildPlan({
     // Das erste Nickerchen des Tages nie vor der Wachzeit, die bei diesem
     // Kind überhaupt zu einem richtigen Nickerchen führt.
     if (napsDone + i === 0 && minFirstWindow > ww) ww = minFirstWindow;
-    const start = addMinutes(cursor, ww);
     const left = remainingNaps - i;
     const suggested = left > 0 ? budget / left : band.napLengthMin;
     const length = Math.round(Math.min(Math.max(suggested, 30), band.napLengthMin * 1.6));
+    if (napEndBy && i === remainingNaps - 1) {
+      const spielraum = minutesBetween(cursor, napEndBy) - length;
+      if (spielraum < ww) ww = Math.max(30, Math.round(spielraum));
+    }
+    const start = addMinutes(cursor, ww);
     const end = addMinutes(start, length);
     // Ein weiteres Nickerchen lohnt nur, wenn danach noch genug Wachzeit bis
     // zur spätestmöglichen Bettzeit bleibt. Gemessen wird ab dem Ende des
@@ -350,10 +363,14 @@ export function buildPlan({
   // müde. Die altersübliche Obergrenze bleibt trotzdem stehen.
   const nichtMuede = addMinutes(cursor, minEvening);
   if (bedtime < nichtMuede) bedtime = new Date(Math.min(nichtMuede.getTime(), ceiling.getTime()));
+  // Die Wunschzeit der Eltern gewinnt, sobald das Kind dann müde genug ist.
+  if (bedtimeTarget && bedtime > bedtimeTarget && nichtMuede <= bedtimeTarget) {
+    bedtime = bedtimeTarget;
+  }
   if (bedtime <= addMinutes(cursor, 30)) bedtime = addMinutes(cursor, 30);
 
   blocks.push({ type: 'wake', start: cursor, end: bedtime, actual: false, evening: true });
-  blocks.push({ type: 'night', start: bedtime, end: nightEndFor(bedtime, morningWake, band), actual: false });
+  blocks.push({ type: 'night', start: bedtime, end: nightEndFor(bedtime, morgenZiel, band), actual: false });
 
   return {
     blocks: blocks.filter((b) => b.type !== 'wake' || b.end > b.start),
