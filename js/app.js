@@ -81,7 +81,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.3';
+export const APP_VERSION = '5.4';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -282,6 +282,14 @@ function context(now = new Date()) {
     : profile.active && profile.values.morning != null
       ? timeOnDay(morningWake, toClock(profile.values.morning))
       : morningWake;
+  // Woher diese Zeit kommt, gehört dazugesagt. Wer eine Wunsch-Bettzeit
+  // gesetzt hat, aber keine Weckzeit, rechnet sonst ohne es zu merken gegen
+  // die alte Gewohnheit weiter - und genau die soll ja weg.
+  const aufstehQuelle = rhythmus.auf
+    ? 'wunsch'
+    : profile.active && profile.values.morning != null
+      ? 'gelernt'
+      : 'eingestellt';
   const gewohnteBettzeit =
     profile.active && profile.values.bedtime != null
       ? timeOnDay(morningWake, toClock(profile.values.bedtime))
@@ -522,6 +530,7 @@ function context(now = new Date()) {
     fenstereffekt,
     tagziel,
     rhythmus,
+    aufstehQuelle,
     experiment,
     bericht,
     angebot,
@@ -1142,9 +1151,13 @@ function sleepDetailCard(ctx) {
             <strong>${fmtDuration(ctx.bilanz.nightNeed)}</strong>.
             ${
               ctx.bilanz.grenze
-                ? `Mit ${fmtTime(next.start)} bis ${fmtTime(
-                    ctx.gewohntesAufstehen
-                  )} bietest du ihr <strong>${fmtDuration(
+                ? `Mit ${fmtTime(next.start)} bis ${fmtTime(ctx.gewohntesAufstehen)}${
+                    ctx.aufstehQuelle === 'wunsch'
+                      ? ''
+                      : ` <em>(so steht sie zurzeit auf${
+                          ctx.rhythmus.bett ? ' - eine Wunsch-Weckzeit fehlt' : ''
+                        })</em>`
+                  } bietest du ihr <strong>${fmtDuration(
                     ctx.bilanz.angebot
                   )}</strong> an - ihre Grenze liegt bei ${fmtDuration(ctx.bilanz.grenze)}.
                    ${

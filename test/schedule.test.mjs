@@ -814,6 +814,61 @@ test('Eine Wunsch-Bettzeit zieht das Nickerchen nach vorn', () => {
   );
 });
 
+test('Ein paar Minuten zu wenig Müdigkeit kippen die Wunschzeit nicht', () => {
+  // Genau der Fall vom 17.10.: das zweite Nickerchen endete so, dass die
+  // Mindestwachzeit drei Minuten nach der Wunschzeit lag - und statt 19:00
+  // stand 19:25 im Plan.
+  const band = {
+    ...bandForAge(480),
+    wakeWindowMin: 200,
+    wakeWindowMax: 222,
+    napLengthMin: 60,
+    dayTimeSleepMin: 60,
+    naps: 1,
+    bedtimeEarliest: '18:30',
+    bedtimeLatest: '19:30',
+    bedtimeCeiling: '20:15'
+  };
+  // Nickerchen bis 16:16, Mindestwachzeit 0,75 * 222 = 167 Min -> 19:03.
+  const nickerchen = {
+    id: 'n1',
+    type: 'nap',
+    start: at(15, 51),
+    end: at(16, 16)
+  };
+  const plan = buildPlan({
+    band,
+    morningWake: at(7, 28),
+    sleeps: [nickerchen],
+    now: at(17, 11),
+    bedtimeTarget: at(19, 0)
+  });
+  assert.equal(fmtTime(plan.bedtime), '19:00');
+});
+
+test('Liegt die Müdigkeit weit nach der Wunschzeit, gilt sie trotzdem', () => {
+  const band = {
+    ...bandForAge(480),
+    wakeWindowMin: 200,
+    wakeWindowMax: 300,
+    napLengthMin: 60,
+    dayTimeSleepMin: 60,
+    naps: 1,
+    bedtimeEarliest: '18:30',
+    bedtimeLatest: '20:00',
+    bedtimeCeiling: '20:15'
+  };
+  // Nickerchen bis 17:30, Mindestwachzeit 225 Min -> 21:15, also weit weg.
+  const plan = buildPlan({
+    band,
+    morningWake: at(7, 28),
+    sleeps: [{ id: 'n1', type: 'nap', start: at(16, 0), end: at(17, 30) }],
+    now: at(18, 0),
+    bedtimeTarget: at(19, 0)
+  });
+  assert.ok(plan.bedtime > at(19, 0), `Bettzeit war ${fmtTime(plan.bedtime)}`);
+});
+
 test('Das Nachtende folgt der Wunsch-Aufstehzeit, der Tagesanfang nicht', () => {
   const band = bandForAge(480);
   // Heute frueh war sie um 07:30 wach, geweckt werden soll sie um 06:30.
