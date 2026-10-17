@@ -4,9 +4,6 @@
  */
 import { AGE_BANDS } from './data.js';
 
-/** So weit darf die Müdigkeit von der Wunsch-Bettzeit abweichen. */
-export const BETTZEIT_SPIELRAUM = 30;
-
 export const MINUTE = 60 * 1000;
 export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
@@ -168,6 +165,11 @@ export function buildPlan({
   pressureMinutes = 0,
   minFirstWindow = 0,
   bedtimeNotBefore = null,
+  // Die Wunsch-Bettzeit steckt den Abend ab (über bedtimeEarliest/Latest)
+  // und zieht ein geplantes Nickerchen nach vorn, damit sie überhaupt
+  // erreichbar ist. Die Zeit selbst wird trotzdem gerechnet: Was auf der
+  // Startseite steht, soll sagen, wann dieses Kind nach diesem Tag müde
+  // ist - nicht, wann es jemand gern hätte.
   bedtimeTarget = null,
   morningTarget = null
 }) {
@@ -366,15 +368,6 @@ export function buildPlan({
   // müde. Die altersübliche Obergrenze bleibt trotzdem stehen.
   const nichtMuede = addMinutes(cursor, minEvening);
   if (bedtime < nichtMuede) bedtime = new Date(Math.min(nichtMuede.getTime(), ceiling.getTime()));
-  // Die Wunschzeit der Eltern gewinnt, sobald das Kind ungefähr müde genug
-  // ist. Ohne Spielraum entschied das eine Viertelstunde Rechenrest: Endete
-  // das Nickerchen drei Minuten zu spät, stand statt der gewünschten 19:00
-  // plötzlich 19:25 da - für die Eltern unerklärlich und genau die Zahl,
-  // die sie nicht wollten.
-  const nahDran = addMinutes(bedtimeTarget || bedtime, BETTZEIT_SPIELRAUM);
-  if (bedtimeTarget && bedtime > bedtimeTarget && nichtMuede <= nahDran) {
-    bedtime = bedtimeTarget;
-  }
   if (bedtime <= addMinutes(cursor, 30)) bedtime = addMinutes(cursor, 30);
 
   blocks.push({ type: 'wake', start: cursor, end: bedtime, actual: false, evening: true });

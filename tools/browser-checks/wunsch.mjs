@@ -88,10 +88,13 @@ pruefe(/Angebot von/.test(hinweis), 'die Karte rechnet das Angebot aus');
 
 const nachher = await bettzeit();
 console.log('  mit Wunsch:  ', nachher.text.find((x) => /Nachtschlaf/.test(x)));
+// Nicht stur die Wunschzeit: gerechnet wird weiter, aber im Abendfenster
+// um den Wunsch herum statt dort, wo die verrutschte Gewohnheit hinzeigt.
 pruefe(
   nachher.minuten !== null && Math.abs(nachher.minuten - 19 * 60) <= 30,
-  `der Plan haelt sich an die Wunsch-Bettzeit (ist ${nachher.minuten})`
+  `der Plan bleibt im Abendfenster um die Wunschzeit (ist ${nachher.minuten})`
 );
+pruefe(nachher.minuten < vorher.minuten, 'und liegt frueher als ohne Wunsch');
 
 // Und der Knopf im Bewertungs-Sheet.
 await geh('heute');

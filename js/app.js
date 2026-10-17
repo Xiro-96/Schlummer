@@ -81,7 +81,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.4';
+export const APP_VERSION = '5.5';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -729,6 +729,15 @@ function arcCenter(ctx) {
     const fenster = ctx.napWindow;
     const minutes = minutesBetween(now, nextSleep.start);
     const was = nextSleep.type === 'night' ? 'Ab ins Bett' : `Nickerchen ${nextSleep.index || 1}`;
+    // Die Wunschzeit steht daneben, nicht an der Stelle der gerechneten:
+    // Was hier steht, ist der Abend, auf den dieser Tag hinausläuft - die
+    // Wunschzeit sagt, wo er hinsollte. Weichen beide ab, ist genau das
+    // die Auskunft, die zählt.
+    const wunschAbend =
+      nextSleep.type === 'night' && ctx.rhythmus && ctx.rhythmus.bett
+        ? timeOnDay(morningWake, ctx.rhythmus.bett)
+        : null;
+    const abweichung = wunschAbend ? minutesBetween(wunschAbend, nextSleep.start) : 0;
     return {
       head: minutes > 0 ? `${was} in` : `${was} überfällig seit`,
       big: fmtCompact(Math.abs(minutes)),
@@ -736,7 +745,9 @@ function arcCenter(ctx) {
         ? `Um ${fmtTime(nextSleep.start)} · Fenster ${
             fenster.von < nextSleep.start ? `ab ${fmtTime(fenster.von)}` : `bis ${fmtTime(fenster.bis)}`
           }`
-        : `Um ${fmtTime(nextSleep.start)}`
+        : Math.abs(abweichung) >= 5
+          ? `Um ${fmtTime(nextSleep.start)} · Wunsch ${fmtTime(wunschAbend)}`
+          : `Um ${fmtTime(nextSleep.start)}`
     };
   }
   return {

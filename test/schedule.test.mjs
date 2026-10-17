@@ -806,7 +806,11 @@ test('Eine Wunsch-Bettzeit zieht das Nickerchen nach vorn', () => {
   });
   const nap = (p) => p.blocks.find((b) => b.type === 'nap');
   assert.ok(ohne.bedtime > mit.bedtime, `ohne ${fmtTime(ohne.bedtime)}, mit ${fmtTime(mit.bedtime)}`);
-  assert.equal(fmtTime(mit.bedtime), '19:00');
+  // Nicht stur die Wunschzeit - aber im Abendfenster darum herum.
+  assert.ok(
+    mit.bedtime <= at(19, 30) && mit.bedtime >= at(18, 30),
+    `Bettzeit war ${fmtTime(mit.bedtime)}`
+  );
   // Und das Nickerchen ist frueher vorbei, damit der Abend ueberhaupt passt.
   assert.ok(
     nap(mit).end < nap(ohne).end,
@@ -814,10 +818,10 @@ test('Eine Wunsch-Bettzeit zieht das Nickerchen nach vorn', () => {
   );
 });
 
-test('Ein paar Minuten zu wenig Müdigkeit kippen die Wunschzeit nicht', () => {
-  // Genau der Fall vom 17.10.: das zweite Nickerchen endete so, dass die
-  // Mindestwachzeit drei Minuten nach der Wunschzeit lag - und statt 19:00
-  // stand 19:25 im Plan.
+test('Die Bettzeit wird gerechnet, auch wenn eine Wunschzeit dasteht', () => {
+  // Was auf der Startseite steht, soll sagen, wann dieses Kind nach diesem
+  // Tag müde ist - nicht, wann es jemand gern hätte. Die Wunschzeit steckt
+  // nur den Rahmen ab.
   const band = {
     ...bandForAge(480),
     wakeWindowMin: 200,
@@ -829,24 +833,21 @@ test('Ein paar Minuten zu wenig Müdigkeit kippen die Wunschzeit nicht', () => {
     bedtimeLatest: '19:30',
     bedtimeCeiling: '20:15'
   };
-  // Nickerchen bis 16:16, Mindestwachzeit 0,75 * 222 = 167 Min -> 19:03.
-  const nickerchen = {
-    id: 'n1',
-    type: 'nap',
-    start: at(15, 51),
-    end: at(16, 16)
-  };
   const plan = buildPlan({
     band,
     morningWake: at(7, 28),
-    sleeps: [nickerchen],
+    sleeps: [{ id: 'n1', type: 'nap', start: at(15, 51), end: at(16, 16) }],
     now: at(17, 11),
     bedtimeTarget: at(19, 0)
   });
-  assert.equal(fmtTime(plan.bedtime), '19:00');
+  // 16:16 plus Wachfenster, nicht stur die gewünschten 19:00.
+  assert.notEqual(fmtTime(plan.bedtime), '19:00');
+  assert.ok(plan.bedtime > at(19, 0), `Bettzeit war ${fmtTime(plan.bedtime)}`);
+  // Der Rahmen gilt trotzdem: nie über das Abendfenster hinaus.
+  assert.ok(plan.bedtime <= at(19, 30), `Bettzeit war ${fmtTime(plan.bedtime)}`);
 });
 
-test('Liegt die Müdigkeit weit nach der Wunschzeit, gilt sie trotzdem', () => {
+test('Das Abendfenster der Wunschzeit begrenzt die gerechnete Bettzeit', () => {
   const band = {
     ...bandForAge(480),
     wakeWindowMin: 200,
@@ -867,6 +868,8 @@ test('Liegt die Müdigkeit weit nach der Wunschzeit, gilt sie trotzdem', () => {
     bedtimeTarget: at(19, 0)
   });
   assert.ok(plan.bedtime > at(19, 0), `Bettzeit war ${fmtTime(plan.bedtime)}`);
+  // Die Altersobergrenze haelt sie trotzdem auf - nicht erst um 21:15.
+  assert.ok(plan.bedtime <= at(20, 15), `Bettzeit war ${fmtTime(plan.bedtime)}`);
 });
 
 test('Das Nachtende folgt der Wunsch-Aufstehzeit, der Tagesanfang nicht', () => {
