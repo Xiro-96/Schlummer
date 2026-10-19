@@ -360,8 +360,24 @@ export function buildPlan({
   // Eine ausdrückliche Untergrenze schlägt das gelernte Abendfenster: Das
   // Fenster bildet die bisherige Routine ab, die Untergrenze das, was heute
   // rechnerisch nötig ist. Die Altersobergrenze bleibt trotzdem stehen.
+  //
+  // Und noch eine Grenze, die lange gefehlt hat: Die Rechnung darf den Abend
+  // strecken, aber nicht über die Wachzeit hinaus, die dieses Kind am Stück
+  // schafft. Sonst kommt heraus, was am 19.10. dastand - Nickerchen bis
+  // 12:34, Bettzeit 20:15, also 7 Std 40 Min Wachfenster am Abend, während
+  // das Band 4 Std 56 Min sagt. Die Uhrzeit war im erlaubten Rahmen, die
+  // Wachzeit dahinter nicht.
+  const abendDeckel = addMinutes(
+    cursor,
+    Math.round(Math.max(lastWindow, band.wakeWindowMax) * 1.2)
+  );
   if (bedtimeNotBefore && bedtime < bedtimeNotBefore) {
-    bedtime = new Date(Math.min(bedtimeNotBefore.getTime(), ceiling.getTime()));
+    const ziel = Math.min(
+      bedtimeNotBefore.getTime(),
+      ceiling.getTime(),
+      abendDeckel.getTime()
+    );
+    if (ziel > bedtime.getTime()) bedtime = new Date(ziel);
   }
   // Hat der letzte Schlaf lange gedauert oder spät geendet, zählt die
   // Mindestwachzeit mehr als die gewohnte Bettzeit: vorher ist das Kind nicht

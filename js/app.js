@@ -81,7 +81,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.5';
+export const APP_VERSION = '5.6';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).

@@ -888,6 +888,59 @@ test('Das Nachtende folgt der Wunsch-Aufstehzeit, der Tagesanfang nicht', () => 
   assert.equal(fmtTime(plan.blocks[0].start), '07:30');
 });
 
+test('Das Budget streckt den Abend nicht über die Wachzeit des Kindes hinaus', () => {
+  // Der Fall vom 19.10.: Nickerchen bis 12:34, Budget wollte 20:20, und die
+  // Altersobergrenze (20:15) war die einzige Bremse. Dahinter standen 7 Std
+  // 40 Min Wachfenster am Abend - bei einem Band, das 5 Std 31 Min sagt.
+  const band = {
+    ...bandForAge(490),
+    wakeWindowMin: 279,
+    wakeWindowMax: 331,
+    napLengthMin: 95,
+    dayTimeSleepMin: 95,
+    naps: 1,
+    bedtimeEarliest: '18:55',
+    bedtimeLatest: '19:55',
+    bedtimeCeiling: '20:15'
+  };
+  const plan = buildPlan({
+    band,
+    morningWake: at(6, 37),
+    sleeps: [{ id: 'n1', type: 'nap', start: at(10, 59), end: at(12, 34) }],
+    now: at(12, 35),
+    bedtimeNotBefore: at(20, 20)
+  });
+  const abend = minutesBetween(at(12, 34), plan.bedtime);
+  assert.ok(abend <= Math.round(331 * 1.2), `Abendfenster war ${fmtDuration(abend)}`);
+  assert.ok(plan.bedtime < at(20, 15), `Bettzeit war ${fmtTime(plan.bedtime)}`);
+  // Und die Untergrenze wirkt trotzdem: nicht zurück auf das frühe Fenster.
+  assert.ok(plan.bedtime >= at(18, 55), `Bettzeit war ${fmtTime(plan.bedtime)}`);
+});
+
+test('Bleibt das Budget im Rahmen, gilt es unveraendert', () => {
+  const band = {
+    ...bandForAge(490),
+    wakeWindowMin: 279,
+    wakeWindowMax: 331,
+    napLengthMin: 95,
+    dayTimeSleepMin: 95,
+    naps: 1,
+    bedtimeEarliest: '18:30',
+    bedtimeLatest: '19:55',
+    bedtimeCeiling: '20:15'
+  };
+  const plan = buildPlan({
+    band,
+    morningWake: at(6, 37),
+    sleeps: [{ id: 'n1', type: 'nap', start: at(11, 25), end: at(13, 0) }],
+    now: at(13, 10),
+    bedtimeNotBefore: at(19, 20)
+  });
+  // Natuerlich waere es 18:31 - die Untergrenze zieht auf 19:20, und das
+  // liegt noch im Rahmen (13:00 + 1,2 x 5:31 = 19:37).
+  assert.equal(fmtTime(plan.bedtime), '19:20');
+});
+
 test('Die Bettzeit aus dem Budget verlangt keine Nacht, die es nie gab', () => {
   const morgen = at(6, 40);
   // Ein Tag mit fast keinem Nickerchen: die reine Rechnung will 12:23 Nacht.
