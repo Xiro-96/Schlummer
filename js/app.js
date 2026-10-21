@@ -48,6 +48,7 @@ import {
   toClock,
   toMinutes
 } from './learning.js';
+import { flaschenReport, MIN_NAECHTE } from './flasche.js';
 import {
   experimentReport,
   STANDARD_TAGE,
@@ -81,7 +82,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.6';
+export const APP_VERSION = '5.7';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -354,6 +355,11 @@ function context(now = new Date()) {
       })
     : null;
 
+  const flaschen = flaschenReport(store.allSleeps(), {
+    now,
+    sickDays: store.getState().sickDays || []
+  });
+
   const angebotsGrenze = store.getState().settings.learning
     ? sleepOfferLimit(store.learningSleeps(), { now })
     : null;
@@ -533,6 +539,7 @@ function context(now = new Date()) {
     aufstehQuelle,
     experiment,
     bericht,
+    flaschen,
     angebot,
     angebotsGrenze,
     krank,
@@ -1360,6 +1367,20 @@ const WACHPHASE_LAGE = {
   }
 };
 
+/**
+ * Ein dreiwertiger Schalter als Chip: ja, nein, nicht beantwortet.
+ *
+ * „Nicht gefragt" und „nein" sind nicht dasselbe - sonst zählte jede Nacht,
+ * in der niemand getippt hat, als Nein und die Auswertung läge daneben.
+ */
+function flaschenChip(id, index, feld, wert, label) {
+  const stand = wert === true ? 'ja' : wert === false ? 'nein' : 'offen';
+  const zeichen = wert === true ? '✓' : wert === false ? '✗' : '';
+  return `<button class="chip flag ${stand}" data-action="toggle-flag"
+    data-id="${esc(id)}" data-index="${index}" data-feld="${feld}"
+    aria-pressed="${wert === true}">${zeichen} ${label}</button>`;
+}
+
 function lastNightCard(ctx) {
   const { lastNight, nightMinutes, now, status, minus, plan, gewohnteBettzeit } = ctx;
   if (!lastNight || status.sleeping || status.nightWaking) return '';
@@ -1397,11 +1418,27 @@ function lastNightCard(ctx) {
                   }</small>
                   <button class="chip" data-action="edit-waking"
                     data-id="${esc(lastNight.id)}" data-index="${i}">✎</button>
+                </li>
+                <li class="gap-flags">
+                  ${flaschenChip(lastNight.id, i, 'flasche', gap.flasche, '🍼 Flasche')}
+                  ${flaschenChip(lastNight.id, i, 'windel', gap.windel, '💧 Windel voll')}
                 </li>`
               )
-              .join('')}</ul>`
+              .join('')}</ul>
+             <p class="hint">
+               Zwei Tipps pro Phase: einmal für Ja, nochmal für Nein, ein drittes Mal löscht
+               die Angabe wieder. Daraus rechnet die Statistik später, woran die langen
+               Phasen hängen.
+             </p>`
           : ''
       }
+      <label class="field">
+        Abendflasche beim Hinlegen
+        <input type="number" inputmode="numeric" min="0" max="600" step="10"
+          id="abend-ml" data-id="${esc(lastNight.id)}"
+          value="${lastNight.flascheMl != null ? lastNight.flascheMl : ''}"
+          placeholder="ml - leer lassen, wenn keine" />
+      </label>
       ${
         minus && nachholen
           ? `<p class="hint warn">
@@ -2385,6 +2422,78 @@ function deutung(b) {
           }`;
 }
 
+function flaschenKarte(ctx) {
+  const f = ctx.flaschen;
+  if (!f) return '';
+  const name = esc(store.getState().child.name || 'dein Kind');
+  const anteil = (g) => (g.naechte ? `${g.lang} von ${g.naechte}` : '-');
+  const zeile = (titel, v, labelMit, labelOhne) => {
+    if (!v.mit.naechte && !v.ohne.naechte) return '';
+    return `
+      <ul class="list compare">
+        <li>
+          <span class="grow">${labelMit}</span>
+          <small class="muted">${v.mit.naechte} ${v.mit.naechte === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${anteil(v.mit)} lang wach</strong>
+        </li>
+        <li>
+          <span class="grow">${labelOhne}</span>
+          <small class="muted">${v.ohne.naechte} ${v.ohne.naechte === 1 ? 'Nacht' : 'Nächte'}</small>
+          <strong>${anteil(v.ohne)} lang wach</strong>
+        </li>
+      </ul>
+      <p class="hint ${v.genug && v.zufall <= 0.2 ? 'budget' : ''}">
+        ${
+          v.genug
+            ? `So ein Unterschied kommt bei reinem Zufall noch in
+               <strong>${Math.round(v.zufall * 100)} von 100</strong> Fällen heraus${
+                 v.zufall > 0.2 ? ' - das ist zu oft, um daraus schon etwas zu schließen.' : '.'
+               }`
+            : `Dafür reichen die Daten noch nicht - ab ${MIN_NAECHTE} Nächten je Seite wird
+               gerechnet.`
+        }
+      </p>`;
+  };
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Flasche, Windel und die langen Phasen</h2>
+        <small class="muted">${f.beantwortet} von ${f.naechte} Nächten erfasst</small>
+      </div>
+      <p class="hint">
+        Erfasst wird auf der Startseite unter „Letzte Nacht": zwei Tipps je Wachphase und die
+        Menge der Abendflasche. Je mehr Nächte beantwortet sind, desto eher lässt sich sagen,
+        woran die langen Phasen bei ${name} hängen.
+      </p>
+      <h3 class="sub">Nachtflasche</h3>
+      ${zeile('Flasche', f.flasche, 'Nächte mit Flasche', 'Nächte ohne Flasche')}
+      <h3 class="sub">Windel</h3>
+      ${zeile('Windel', f.windel, 'Windel war voll', 'Windel war nicht voll')}
+      <h3 class="sub">Abendflasche</h3>
+      ${
+        f.menge
+          ? `<p class="hint">Geteilt bei <strong>${f.menge.grenze} ml</strong> - dem Mittelwert
+              der erfassten Abende.</p>
+             ${zeile('Menge', f.menge, `ab ${f.menge.grenze} ml`, `unter ${f.menge.grenze} ml`)}`
+          : `<p class="hint">
+              ${
+                f.mitMenge
+                  ? `${f.mitMenge} ${f.mitMenge === 1 ? 'Abend' : 'Abende'} erfasst${
+                      f.mengeMedian ? `, im Mittel ${f.mengeMedian} ml` : ''
+                    }. Für einen Vergleich braucht es ${2 * MIN_NAECHTE} Abende mit
+                     unterschiedlichen Mengen.`
+                  : 'Noch keine Menge erfasst.'
+              }
+             </p>`
+      }
+      <p class="hint">
+        Beobachtung an den eigenen Nächten, kein Beweis - und ein Zusammenhang sagt nicht, in
+        welche Richtung er läuft. Dass die Windel voll war, kann das Aufwachen erklären oder
+        bloß begleiten.
+      </p>
+    </div>`;
+}
+
 function experimentKarte(ctx) {
   const b = ctx.bericht;
   const e = ctx.experiment;
@@ -2822,6 +2931,8 @@ function viewStatistik() {
     </div>
 
     ${bilanzKarte(context())}
+
+    ${flaschenKarte(context())}
 
     ${experimentKarte(context())}
 
@@ -4084,6 +4195,10 @@ const actions = {
     toast('Experiment abgeschlossen');
     render();
   },
+  'toggle-flag'(el) {
+    store.toggleInterruptionFlag(el.dataset.id, Number(el.dataset.index), el.dataset.feld);
+    render();
+  },
   'clear-wunsch'() {
     store.setWunschZeit('bett', '');
     store.setWunschZeit('auf', '');
@@ -4395,6 +4510,12 @@ document.addEventListener('change', (event) => {
         [el.dataset.field]: value
       });
     }
+    render();
+    return;
+  }
+  if (el.id === 'abend-ml') {
+    store.setNightBottle(el.dataset.id, el.value);
+    toast(el.value ? `Abendflasche: ${Number(el.value)} ml` : 'Abendflasche entfernt');
     render();
     return;
   }

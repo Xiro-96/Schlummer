@@ -1406,3 +1406,26 @@ button.ghost.on {
   border-color: color-mix(in srgb, var(--warn) 60%, transparent);
   background: color-mix(in srgb, var(--warn) 7%, var(--card));
 }
+
+/* Dreiwertige Schalter an den Wachphasen: ja, nein, noch nicht beantwortet. */
+.gap-flags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 0;
+  border-top: 0;
+}
+.chip.flag {
+  flex: 1 1 auto;
+  justify-content: center;
+  opacity: 0.55;
+}
+.chip.flag.ja {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip.flag.nein {
+  opacity: 0.8;
+  text-decoration: line-through;
+}

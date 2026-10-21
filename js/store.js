@@ -123,7 +123,10 @@ export function allSleeps() {
       ...s,
       start: toDate(s.start),
       end: toDate(s.end),
+      // Spread, nicht neu bauen: Sonst fallen alle Felder weg, die eine
+      // Wachphase ausser den Zeiten noch traegt (Flasche, Windel).
       interruptions: (s.interruptions || []).map((i) => ({
+        ...i,
         start: toDate(i.start),
         end: toDate(i.end)
       }))
@@ -238,7 +241,38 @@ export function updateInterruption(sleepId, index, patch) {
     if (!gap) return;
     if (patch.start) gap.start = patch.start.toISOString();
     if ('end' in patch) gap.end = patch.end ? patch.end.toISOString() : null;
+    // Was in dieser Wachphase los war. Dreiwertig: true, false oder nicht
+    // beantwortet - „nicht gefragt" und „nein" sind nicht dasselbe, sonst
+    // zaehlt die Auswertung jede unausgefuellte Nacht als Nein.
+    for (const feld of ['flasche', 'windel']) {
+      if (feld in patch) gap[feld] = patch[feld] === null ? null : Boolean(patch[feld]);
+    }
   });
+}
+
+/**
+ * Die Menge der Abendflasche in Millilitern, am Nachteintrag.
+ *
+ * Sie gehoert zur Nacht, nicht zum Tag: Gegeben wird sie beim Hinlegen, und
+ * die Frage ist, was sie in dieser Nacht anrichtet.
+ */
+export function setNightBottle(sleepId, ml) {
+  update((s) => {
+    const entry = s.sleeps.find((x) => x.id === sleepId);
+    if (!entry) return;
+    const zahl = Number(ml);
+    entry.flascheMl = Number.isFinite(zahl) && zahl > 0 ? Math.round(zahl) : null;
+  });
+}
+
+/** Eine Wachphase umschalten: ja -> nein -> nicht beantwortet -> ja. */
+export function toggleInterruptionFlag(sleepId, index, feld) {
+  const entry = load().sleeps.find((x) => x.id === sleepId);
+  const gap = entry && entry.interruptions ? entry.interruptions[index] : null;
+  if (!gap) return;
+  const jetzt = gap[feld];
+  const naechster = jetzt === true ? false : jetzt === false ? null : true;
+  updateInterruption(sleepId, index, { [feld]: naechster });
 }
 
 export function addInterruption(sleepId, start, end) {
