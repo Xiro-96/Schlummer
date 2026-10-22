@@ -1429,3 +1429,9 @@ button.ghost.on {
   opacity: 0.8;
   text-decoration: line-through;
 }
+
+.nap-block + .nap-block {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}

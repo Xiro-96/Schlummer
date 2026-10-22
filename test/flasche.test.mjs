@@ -122,3 +122,67 @@ test('Kranke Tage und Fehleinträge bleiben draußen', () => {
 test('Die Schwelle ist dokumentiert und wird eingehalten', () => {
   assert.ok(MIN_NAECHTE >= 4, 'unter vier Nächten je Seite ist nichts zu holen');
 });
+
+/* ------------------------------------------------------- Mittagsschlaf */
+
+import { nickerchenReport, KURZES_NICKERCHEN } from '../js/flasche.js';
+
+const nickerchen = (tag, minuten, { ml = null, windel = null } = {}) => ({
+  type: 'nap',
+  start: new Date(2024, 4, tag, 11, 30),
+  end: new Date(2024, 4, tag, 11, 30 + minuten),
+  flascheMl: ml,
+  windel,
+  interruptions: []
+});
+
+test('Ohne jede Angabe gibt es keinen Mittagsbericht', () => {
+  const r = nickerchenReport([nickerchen(1, 100), nickerchen(2, 40)], { now: NOW, days: 30 });
+  assert.equal(r, null);
+});
+
+test('Null Milliliter heisst "ohne Flasche", leer heisst "nicht erfasst"', () => {
+  const sleeps = [];
+  for (let tag = 1; tag <= 5; tag++) sleeps.push(nickerchen(tag, 40, { ml: 200 }));
+  for (let tag = 7; tag <= 11; tag++) sleeps.push(nickerchen(tag, 110, { ml: 0 }));
+  // Zwei Tage ohne Angabe duerfen keine Seite auffuellen.
+  sleeps.push(nickerchen(13, 30), nickerchen(14, 120));
+  const r = nickerchenReport(sleeps, { now: NOW, days: 30 });
+
+  assert.equal(r.nickerchen, 12);
+  assert.equal(r.mitMenge, 10);
+  assert.equal(r.flasche.mit.naechte, 5);
+  assert.equal(r.flasche.ohne.naechte, 5);
+  assert.equal(r.flasche.mit.lang, 5, 'alle mit Flasche waren kurz');
+  assert.equal(r.flasche.ohne.lang, 0);
+  assert.ok(r.flasche.zufall < 0.01, `p war ${r.flasche.zufall}`);
+});
+
+test('Die Grenze fuer ein kurzes Nickerchen ist eine Stunde', () => {
+  const sleeps = [];
+  for (let tag = 1; tag <= 5; tag++) {
+    sleeps.push(nickerchen(tag, KURZES_NICKERCHEN - 1, { ml: 200 }));
+  }
+  for (let tag = 7; tag <= 11; tag++) {
+    sleeps.push(nickerchen(tag, KURZES_NICKERCHEN, { ml: 0 }));
+  }
+  const r = nickerchenReport(sleeps, { now: NOW, days: 30 });
+  assert.equal(r.flasche.mit.lang, 5);
+  assert.equal(r.flasche.ohne.lang, 0);
+});
+
+test('Unterwegs eingeschlafen zaehlt auch hier nicht mit', () => {
+  const unterwegs = { ...nickerchen(1, 25, { ml: 0 }), unterwegs: true };
+  const r = nickerchenReport([unterwegs, nickerchen(2, 100, { ml: 0 })], { now: NOW, days: 30 });
+  assert.equal(r.nickerchen, 1);
+});
+
+test('Die volle Windel wird mittags genauso verglichen', () => {
+  const sleeps = [];
+  for (let tag = 1; tag <= 5; tag++) sleeps.push(nickerchen(tag, 35, { windel: true }));
+  for (let tag = 7; tag <= 11; tag++) sleeps.push(nickerchen(tag, 115, { windel: false }));
+  const r = nickerchenReport(sleeps, { now: NOW, days: 30 });
+  assert.equal(r.windel.genug, true);
+  assert.equal(r.windel.mit.lang, 5);
+  assert.equal(r.windel.ohne.lang, 0);
+});

@@ -131,6 +131,47 @@ const karte2 = await page.evaluate(() => {
 console.log('  ' + karte2.slice(0, 320));
 pruefe(/von 100/.test(karte2), 'mit genug Naechten steht die Zufallschance da');
 
+// Und dasselbe am Nickerchen: ein Schalter am Schlaf selbst, ein ml-Feld.
+// Die Karte heisst "Nickerchen heute" - also braucht es eines von heute.
+await page.evaluate(() => {
+  const st = JSON.parse(localStorage.getItem('schlummer.state.v1'));
+  st.sleeps.push({ id: 'p-heute', type: 'nap',
+    start: '2026-09-26T10:30:00+02:00', end: '2026-09-26T12:00:00+02:00',
+    note: '', settle: 'fast', mood: 'happy', wakings: null, interruptions: [] });
+  localStorage.setItem('schlummer.state.v1', JSON.stringify(st));
+});
+await page.clock.setFixedTime(new Date('2026-09-26T13:00:00+02:00'));
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForSelector('.arc-center');
+await page.waitForTimeout(350);
+const napKarte = await page.evaluate(() => {
+  const h = [...document.querySelectorAll('h2')].find((x) => /Nickerchen heute/.test(x.textContent));
+  return h ? h.closest('.card').innerText.replace(/\s+/g, ' ') : '';
+});
+console.log('  ' + napKarte.slice(0, 160));
+pruefe(Boolean(napKarte), 'die Nickerchen-Karte ist da');
+const napChip = '.nap-block [data-action="toggle-flag"][data-feld="windel"]';
+await page.waitForSelector(napChip);
+await page.tap(napChip);
+await page.waitForTimeout(250);
+const napWindel = await page.evaluate(() =>
+  JSON.parse(localStorage.getItem('schlummer.state.v1')).sleeps.find((x) => x.id === 'p-heute').windel
+);
+pruefe(napWindel === true, `die Angabe haengt am Nickerchen (ist ${napWindel})`);
+await page.fill('.nap-block .ml-feld', '150');
+await page.dispatchEvent('.nap-block .ml-feld', 'change');
+await page.waitForTimeout(300);
+const napMl = await page.evaluate(() =>
+  JSON.parse(localStorage.getItem('schlummer.state.v1')).sleeps.find((x) => x.id === 'p-heute').flascheMl
+);
+console.log('  Nickerchen-Flasche:', napMl, '| Windel:', napWindel);
+pruefe(napMl === 150, `die Menge am Nickerchen haelt (ist ${napMl})`);
+// Die Abendmenge darf davon unberuehrt bleiben - zwei Felder, zwei Eintraege.
+const abendNoch = await page.evaluate(() =>
+  JSON.parse(localStorage.getItem('schlummer.state.v1')).sleeps.find((x) => x.id === 'n25').flascheMl
+);
+pruefe(abendNoch === 300, `die Abendmenge bleibt stehen (ist ${abendNoch})`);
+
 await page.screenshot({ path: join(BILDER, 'shot-flasche.png'), fullPage: true });
 await browser.close();
 console.log(fehler ? `\n${fehler} Abweichung(en)` : '\nAlles wie erwartet');

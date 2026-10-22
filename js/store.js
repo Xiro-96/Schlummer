@@ -251,17 +251,30 @@ export function updateInterruption(sleepId, index, patch) {
 }
 
 /**
- * Die Menge der Abendflasche in Millilitern, am Nachteintrag.
+ * Die Menge der Flasche vor diesem Schlaf, in Millilitern.
  *
- * Sie gehoert zur Nacht, nicht zum Tag: Gegeben wird sie beim Hinlegen, und
- * die Frage ist, was sie in dieser Nacht anrichtet.
+ * Sie haengt am Schlafeintrag, nicht am Tag - bei der Nacht ist es die
+ * Abendflasche, beim Nickerchen die davor. Gefragt ist beide Male dasselbe:
+ * was vor dem Hinlegen hineinging und was danach passiert ist.
  */
-export function setNightBottle(sleepId, ml) {
+export function setBottleMl(sleepId, ml) {
   update((s) => {
     const entry = s.sleeps.find((x) => x.id === sleepId);
     if (!entry) return;
     const zahl = Number(ml);
     entry.flascheMl = Number.isFinite(zahl) && zahl > 0 ? Math.round(zahl) : null;
+  });
+}
+
+/** Eine Angabe am Schlaf selbst umschalten (z. B. volle Windel beim Wecken). */
+export function toggleSleepFlag(sleepId, feld) {
+  const entry = load().sleeps.find((x) => x.id === sleepId);
+  if (!entry) return;
+  const jetzt = entry[feld];
+  const naechster = jetzt === true ? false : jetzt === false ? null : true;
+  update((s) => {
+    const e = s.sleeps.find((x) => x.id === sleepId);
+    if (e) e[feld] = naechster;
   });
 }
 

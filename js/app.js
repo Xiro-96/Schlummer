@@ -48,7 +48,12 @@ import {
   toClock,
   toMinutes
 } from './learning.js';
-import { flaschenReport, MIN_NAECHTE } from './flasche.js';
+import {
+  flaschenReport,
+  nickerchenReport,
+  KURZES_NICKERCHEN,
+  MIN_NAECHTE
+} from './flasche.js';
 import {
   experimentReport,
   STANDARD_TAGE,
@@ -82,7 +87,7 @@ const TABS = [
 ];
 
 /** Version der App - steht in "Mehr" und wandert mit in den Export. */
-export const APP_VERSION = '5.7';
+export const APP_VERSION = '5.8';
 
 let route = 'heute';
 // Welcher Tag im Rückblick angesehen wird (null = heute, live).
@@ -359,6 +364,10 @@ function context(now = new Date()) {
     now,
     sickDays: store.getState().sickDays || []
   });
+  const napFlaschen = nickerchenReport(store.allSleeps(), {
+    now,
+    sickDays: store.getState().sickDays || []
+  });
 
   const angebotsGrenze = store.getState().settings.learning
     ? sleepOfferLimit(store.learningSleeps(), { now })
@@ -540,6 +549,7 @@ function context(now = new Date()) {
     experiment,
     bericht,
     flaschen,
+    napFlaschen,
     angebot,
     angebotsGrenze,
     krank,
@@ -1376,9 +1386,57 @@ const WACHPHASE_LAGE = {
 function flaschenChip(id, index, feld, wert, label) {
   const stand = wert === true ? 'ja' : wert === false ? 'nein' : 'offen';
   const zeichen = wert === true ? '✓' : wert === false ? '✗' : '';
+  // Ohne Index hängt die Angabe am Schlaf selbst, nicht an einer Wachphase.
+  const ziel = index === null ? '' : ` data-index="${index}"`;
   return `<button class="chip flag ${stand}" data-action="toggle-flag"
-    data-id="${esc(id)}" data-index="${index}" data-feld="${feld}"
+    data-id="${esc(id)}"${ziel} data-feld="${feld}"
     aria-pressed="${wert === true}">${zeichen} ${label}</button>`;
+}
+
+/**
+ * Die Nickerchen des Tages mit denselben beiden Fragen wie die Nacht.
+ *
+ * Die Vermutung dahinter: Wenn vor dem Hinlegen eine Flasche kommt, wirkt
+ * mittags derselbe Mechanismus wie nachts - nach vierzig Minuten ist die
+ * Windel voll und das Kind wach. Genau damit hat dieses Protokoll im
+ * September angefangen ("mittags oft schnell wieder wach"), nur hat bisher
+ * niemand die Flasche dazu erfasst.
+ */
+function nickerchenKarte(ctx) {
+  const naps = ctx.sleeps.filter((s) => s.type !== 'night' && s.end);
+  if (!naps.length || ctx.krank) return '';
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Nickerchen heute</h2>
+        <small class="muted">${naps.length === 1 ? 'eines' : `${naps.length} Stück`}</small>
+      </div>
+      ${naps
+        .map(
+          (nap) => `
+        <div class="nap-block">
+          <p class="hint">
+            <strong>${fmtTime(nap.start)}&ndash;${fmtTime(nap.end)}</strong> &middot;
+            ${fmtDuration(minutesBetween(nap.start, nap.end))}
+          </p>
+          <div class="row tight">
+            ${flaschenChip(nap.id, null, 'windel', nap.windel, '💧 Windel voll')}
+          </div>
+          <label class="field">
+            Flasche davor
+            <input type="number" inputmode="numeric" min="0" max="600" step="10"
+              class="ml-feld" data-id="${esc(nap.id)}"
+              value="${nap.flascheMl != null ? nap.flascheMl : ''}"
+              placeholder="ml - leer lassen, wenn keine" />
+          </label>
+        </div>`
+        )
+        .join('')}
+      <p class="hint">
+        Dieselben zwei Fragen wie nachts. Wenn das kurze Aufwachen mittags und nachts
+        dieselbe Ursache hat, zeigt sich das nach ein paar Wochen nebeneinander.
+      </p>
+    </div>`;
 }
 
 function lastNightCard(ctx) {
@@ -1435,7 +1493,7 @@ function lastNightCard(ctx) {
       <label class="field">
         Abendflasche beim Hinlegen
         <input type="number" inputmode="numeric" min="0" max="600" step="10"
-          id="abend-ml" data-id="${esc(lastNight.id)}"
+          id="abend-ml" class="ml-feld" data-id="${esc(lastNight.id)}"
           value="${lastNight.flascheMl != null ? lastNight.flascheMl : ''}"
           placeholder="ml - leer lassen, wenn keine" />
       </label>
@@ -1806,6 +1864,8 @@ function viewHeute() {
     }
 
     ${lastNightCard(ctx)}
+
+    ${nickerchenKarte(ctx)}
 
     <div class="card tight spread">
       <div>
@@ -2490,6 +2550,69 @@ function flaschenKarte(ctx) {
         Beobachtung an den eigenen Nächten, kein Beweis - und ein Zusammenhang sagt nicht, in
         welche Richtung er läuft. Dass die Windel voll war, kann das Aufwachen erklären oder
         bloß begleiten.
+      </p>
+    </div>
+    ${nickerchenFlaschenKarte(ctx)}`;
+}
+
+/** Dieselbe Frage für den Mittagsschlaf. */
+function nickerchenFlaschenKarte(ctx) {
+  const f = ctx.napFlaschen;
+  if (!f) return '';
+  const anteil = (g) => (g.naechte ? `${g.lang} von ${g.naechte}` : '-');
+  const zeile = (v, labelMit, labelOhne) => {
+    if (!v.mit.naechte && !v.ohne.naechte) return '';
+    return `
+      <ul class="list compare">
+        <li>
+          <span class="grow">${labelMit}</span>
+          <small class="muted">${v.mit.naechte} ${
+            v.mit.naechte === 1 ? 'Nickerchen' : 'Nickerchen'
+          }</small>
+          <strong>${anteil(v.mit)} kurz</strong>
+        </li>
+        <li>
+          <span class="grow">${labelOhne}</span>
+          <small class="muted">${v.ohne.naechte} Nickerchen</small>
+          <strong>${anteil(v.ohne)} kurz</strong>
+        </li>
+      </ul>
+      <p class="hint ${v.genug && v.zufall <= 0.2 ? 'budget' : ''}">
+        ${
+          v.genug
+            ? `Zufallschance <strong>${Math.round(v.zufall * 100)} von 100</strong>${
+                v.zufall > 0.2 ? ' - zu oft für einen Schluss.' : '.'
+              }`
+            : `Dafür reichen die Daten noch nicht - ab ${MIN_NAECHTE} je Seite wird gerechnet.`
+        }
+      </p>`;
+  };
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h2>Dasselbe mittags</h2>
+        <small class="muted">${f.mitMenge} von ${f.nickerchen} erfasst</small>
+      </div>
+      <p class="hint">
+        Als <strong>kurz</strong> zählt ein Nickerchen unter
+        ${fmtDuration(KURZES_NICKERCHEN)}${
+          f.laengeMedian ? ` - im Mittel dauern sie ${fmtDuration(f.laengeMedian)}` : ''
+        }.
+      </p>
+      <h3 class="sub">Flasche davor</h3>
+      ${zeile(f.flasche, 'mit Flasche', 'ohne Flasche (0 ml)')}
+      <h3 class="sub">Windel beim Aufwachen</h3>
+      ${zeile(f.windel, 'war voll', 'war nicht voll')}
+      ${
+        f.menge
+          ? `<h3 class="sub">Menge</h3>
+             <p class="hint">Geteilt bei <strong>${f.menge.grenze} ml</strong>.</p>
+             ${zeile(f.menge, `ab ${f.menge.grenze} ml`, `unter ${f.menge.grenze} ml`)}`
+          : ''
+      }
+      <p class="hint">
+        Damit „ohne Flasche" zählt, trag an flaschenlosen Tagen <strong>0</strong> ein - ein
+        leeres Feld heißt „nicht erfasst", nicht „keine".
       </p>
     </div>`;
 }
@@ -4196,7 +4319,8 @@ const actions = {
     render();
   },
   'toggle-flag'(el) {
-    store.toggleInterruptionFlag(el.dataset.id, Number(el.dataset.index), el.dataset.feld);
+    if (el.dataset.index === undefined) store.toggleSleepFlag(el.dataset.id, el.dataset.feld);
+    else store.toggleInterruptionFlag(el.dataset.id, Number(el.dataset.index), el.dataset.feld);
     render();
   },
   'clear-wunsch'() {
@@ -4513,9 +4637,9 @@ document.addEventListener('change', (event) => {
     render();
     return;
   }
-  if (el.id === 'abend-ml') {
-    store.setNightBottle(el.dataset.id, el.value);
-    toast(el.value ? `Abendflasche: ${Number(el.value)} ml` : 'Abendflasche entfernt');
+  if (el.classList && el.classList.contains('ml-feld')) {
+    store.setBottleMl(el.dataset.id, el.value);
+    toast(el.value ? `${Number(el.value)} ml gespeichert` : 'Menge entfernt');
     render();
     return;
   }

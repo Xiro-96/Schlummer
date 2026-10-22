@@ -34,7 +34,7 @@ npm run check:browser
 | `angebot.mjs` | Die Angebotsgrenze wird aus den eigenen Nächten geschätzt und der Plan bleibt darunter |
 | `wunsch.mjs` | Der Wunschrhythmus zieht den Abend aus der verrutschten Gewohnheit zurück, ohne die gerechnete Bettzeit zu ersetzen; der Knopf im Bewertungs-Sheet schließt es auch |
 | `experiment.mjs` | Experiment starten, laufender Hinweis auf der Startseite, Auswertung - und bei zu wenig Nächten sagt sie das, statt zu rechnen |
-| `flasche.mjs` | Flasche und Windel je Wachphase als dreiwertiger Schalter (ja/nein/offen), Abendmenge in ml, und die Auswertung rechnet erst ab genug Nächten |
+| `flasche.mjs` | Flasche und Windel je Wachphase als dreiwertiger Schalter (ja/nein/offen), Mengen in ml an Nacht und Nickerchen getrennt, und die Auswertung rechnet erst ab genug Nächten |
 
 ## Warum im Projekt und nicht daneben
 

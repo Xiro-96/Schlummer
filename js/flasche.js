@@ -137,3 +137,86 @@ export function flaschenReport(sleeps, opts = {}) {
     menge
   };
 }
+
+/** Ab dieser Länge gilt ein Nickerchen als richtiges, nicht als Zyklus. */
+export const KURZES_NICKERCHEN = 60;
+
+/**
+ * Dieselbe Frage für den Mittagsschlaf: Hängen die kurzen Nickerchen an der
+ * Flasche davor - und an der Windel danach?
+ *
+ * Das ist die Frage, mit der dieses Protokoll angefangen hat ("mittags oft
+ * schnell wieder wach"), nur dass die Flasche davor bis jetzt nirgends stand.
+ */
+export function nickerchenReport(sleeps, { days = 21, now = new Date(), sickDays = [] } = {}) {
+  const von = new Date(now.getTime() - days * DAY);
+  const krank = new Set(sickDays);
+  const tagKey = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const naps = [];
+  for (const nap of sleeps) {
+    if (nap.type === 'night' || !nap.end) continue;
+    if (nap.start < von || nap.start > now) continue;
+    if (krank.has(tagKey(nap.start))) continue;
+    if (nap.unterwegs) continue;
+    const minuten = minutesBetween(nap.start, nap.end);
+    if (minuten < 10 || minuten > 5 * 60) continue;
+    naps.push({
+      datum: nap.start,
+      minuten,
+      kurz: minuten < KURZES_NICKERCHEN,
+      ml: Number.isFinite(nap.flascheMl) ? nap.flascheMl : null,
+      windel: nap.windel === true ? true : nap.windel === false ? false : null
+    });
+  }
+  const mitMl = naps.filter((n) => n.ml != null);
+  const windelJa = naps.filter((n) => n.windel === true);
+  const windelNein = naps.filter((n) => n.windel === false);
+  if (!mitMl.length && !windelJa.length && !windelNein.length) return null;
+
+  const beschreibeNap = (rows) => ({
+    naechte: rows.length,
+    lang: rows.filter((n) => n.kurz).length, // "lang" heißt hier: auffällig, also kurz
+    wachMedian: median(rows.map((n) => n.minuten)),
+    laengsteMedian: median(rows.map((n) => n.minuten))
+  });
+  const vergleichNap = (a, b) => {
+    if (a.length < MIN_NAECHTE || b.length < MIN_NAECHTE) {
+      return { genug: false, mit: beschreibeNap(a), ohne: beschreibeNap(b), zufall: null };
+    }
+    return {
+      genug: true,
+      mit: beschreibeNap(a),
+      ohne: beschreibeNap(b),
+      zufall: fisherExact(
+        a.filter((n) => n.kurz).length,
+        a.length - a.filter((n) => n.kurz).length,
+        b.filter((n) => n.kurz).length,
+        b.length - b.filter((n) => n.kurz).length
+      )
+    };
+  };
+
+  let menge = null;
+  if (mitMl.length >= 2 * MIN_NAECHTE) {
+    const grenze = median(mitMl.map((n) => n.ml));
+    const viel = mitMl.filter((n) => n.ml >= grenze);
+    const wenig = mitMl.filter((n) => n.ml < grenze);
+    if (viel.length >= MIN_NAECHTE && wenig.length >= MIN_NAECHTE) {
+      menge = { grenze, ...vergleichNap(viel, wenig) };
+    }
+  }
+  // Mit Flasche gegen ohne: "ohne" heißt ausdrücklich 0 ml, nicht "nicht erfasst".
+  const mitFlasche = mitMl.filter((n) => n.ml > 0);
+  const ohneFlasche = mitMl.filter((n) => n.ml === 0);
+
+  return {
+    nickerchen: naps.length,
+    mitMenge: mitMl.length,
+    mengeMedian: mitMl.length ? median(mitMl.map((n) => n.ml)) : null,
+    laengeMedian: naps.length ? median(naps.map((n) => n.minuten)) : null,
+    flasche: vergleichNap(mitFlasche, ohneFlasche),
+    windel: vergleichNap(windelJa, windelNein),
+    menge
+  };
+}
